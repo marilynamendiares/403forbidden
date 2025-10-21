@@ -1,3 +1,4 @@
+// src/server/auth.ts
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
@@ -9,7 +10,14 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
-  pages: { signIn: "/login" },
+
+  // наши кастомные страницы
+  pages: {
+    signIn: "/login",
+    signOut: "/login",
+    error: "/login",
+  },
+
   providers: [
     Credentials({
       name: "Email & Password",
@@ -47,10 +55,35 @@ export const authOptions: NextAuthOptions = {
       },
     }),
   ],
+
   callbacks: {
+    // пробрасываем id пользователя в сессию
     async session({ session, token }) {
       if (token?.sub) (session as any).userId = token.sub;
       return session;
+    },
+
+    // jwt без изменений
+    async jwt({ token }) {
+      return token;
+    },
+
+    // безопасные редиректы после signIn/signOut
+    async redirect({ url, baseUrl }) {
+      // относительные пути → внутрь приложения
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+
+      // абсолютные урлы: разрешаем только свой origin
+      try {
+        const u = new URL(url);
+        const b = new URL(baseUrl);
+        if (u.origin === b.origin) return url;
+      } catch {
+        // игнор, упадём в fallback
+      }
+
+      // fallback — на главную
+      return baseUrl;
     },
   },
 };
