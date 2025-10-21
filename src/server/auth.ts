@@ -1,13 +1,15 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import NextAuth, { type NextAuthConfig } from "next-auth";
+import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import { prisma } from "./db";
 
-export const authConfig: NextAuthConfig = {
+export const authOptions: NextAuthOptions = {
+  secret: process.env.NEXTAUTH_SECRET,
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
+  pages: { signIn: "/login" },
   providers: [
     Credentials({
       name: "Email & Password",
@@ -25,7 +27,12 @@ export const authConfig: NextAuthConfig = {
 
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email },
-          include: { profile: true },
+          select: {
+            id: true,
+            email: true,
+            hashedPassword: true,
+            profile: { select: { displayName: true, username: true } },
+          },
         });
         if (!user || !user.hashedPassword) return null;
 
@@ -40,7 +47,6 @@ export const authConfig: NextAuthConfig = {
       },
     }),
   ],
-  pages: { signIn: "/login" },
   callbacks: {
     async session({ session, token }) {
       if (token?.sub) (session as any).userId = token.sub;
@@ -48,5 +54,3 @@ export const authConfig: NextAuthConfig = {
     },
   },
 };
-
-export const { auth, handlers, signIn, signOut } = NextAuth(authConfig);

@@ -1,5 +1,4 @@
 "use client";
-
 import { signIn } from "next-auth/react";
 import { useState } from "react";
 
@@ -12,45 +11,26 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
 
-    const result = await signIn("credentials", {
+    const res = await signIn("credentials", {
       email,
       password,
-      redirect: false,
+      redirect: true,
+      callbackUrl: "/",
     });
 
-    if (result?.error) {
-      setError("Invalid email or password");
-    } else {
-      window.location.href = "/"; // после логина на главную
-    }
+    if ((res as any)?.error) setError("Invalid email or password");
   }
 
   return (
     <div className="mx-auto max-w-sm py-16">
       <h1 className="text-2xl font-semibold mb-6">Sign in</h1>
-
       <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-
+        <input className="w-full border rounded px-3 py-2" type="email" placeholder="Email"
+               value={email} onChange={(e) => setEmail(e.target.value)} />
+        <input className="w-full border rounded px-3 py-2" type="password" placeholder="Password"
+               value={password} onChange={(e) => setPassword(e.target.value)} />
         {error && <p className="text-red-600 text-sm">{error}</p>}
-
-        <button className="w-full rounded bg-black text-white py-2">
-          Sign in
-        </button>
+        <button className="w-full rounded bg-black text-white py-2">Sign in</button>
       </form>
     </div>
   );
