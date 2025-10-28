@@ -1,11 +1,12 @@
 // src/app/api/profile/[username]/route.ts
 import { prisma } from "@/server/db";
 import { NextResponse } from "next/server";
+import type { NextRequest } from "next/server";
 
-type Params = { params: { username: string } };
+type Ctx = { params: Promise<{ username: string }> };
 
-export async function GET(_: Request, { params }: Params) {
-  const { username } = params;
+export async function GET(_req: NextRequest, { params }: Ctx) {
+  const { username } = await params;
 
   if (!username) {
     return NextResponse.json({ error: "Missing username" }, { status: 400 });

@@ -1,64 +1,78 @@
+// src/app/forum/[category]/[slug]/page.tsx
 import Link from "next/link";
 import { headers, cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/server/auth";
 import { revalidatePath } from "next/cache";
+import ReplyFormClient from "@/components/ReplyFormClient";
+import Markdown from "@/components/Markdown";
+import { timeAgo } from "@/lib/TimeAgo";
+import ThreadLiveClient from "@/components/ThreadLiveClient";
 
 export const dynamic = "force-dynamic";
 
-async function getThread(category: string, slug: string) {
+async function getThread(category: string, slug: string, cursor?: string) {
   const h = await headers();
   const origin =
     h.get("origin") ??
     `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
 
-  const postsRes = await fetch(
-    `${origin}/api/forum/categories/${category}/threads/${slug}/posts`,
-    { cache: "no-store" }
-  );
-  const posts = postsRes.ok ? await postsRes.json() : [];
-  return { posts, title: slug.replace(/-/g, " ") };
+  const url = new URL(`${origin}/api/forum/categories/${category}/threads/${slug}/posts`);
+  if (cursor) url.searchParams.set("cursor", cursor);
+
+  const postsRes = await fetch(url, { cache: "no-store" });
+  const { items, nextCursor } = postsRes.ok
+    ? await postsRes.json()
+    : { items: [], nextCursor: null };
+
+  return { posts: items, nextCursor, title: slug.replace(/-/g, " ") };
 }
 
 export default async function ThreadPage({
   params,
+  searchParams,
 }: {
   params: { category: string; slug: string };
+  searchParams: { cursor?: string };
 }) {
-  const { posts, title } = await getThread(params.category, params.slug);
+  const session = await getServerSession(authOptions);
+  const me = (session as any)?.userId as string | undefined;
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <a
-          className="text-sm opacity-70 hover:underline"
-          href={`/forum/${params.category}`}
-        >
-          ← Back
-        </a>
-        <h1 className="text-2xl font-semibold mt-2">{title}</h1>
-      </div>
+  // ✅ извлекаем один раз и используем дальше только эти переменные
+  const category = String(params.category);
+  const slug = String(params.slug);
 
-      <ul className="grid gap-3">
-        {posts.map((p: any) => (
-          <li key={p.id} className="border border-neutral-800 rounded-xl p-4">
-            <p className="opacity-60 text-xs mb-2">
-              {p.author?.profile?.displayName ??
-                p.author?.profile?.username ??
-                "user"}
-            </p>
-            <div className="prose prose-invert whitespace-pre-wrap">
-              {p.markdown}
-            </div>
-          </li>
-        ))}
-        {posts.length === 0 && <p className="opacity-60">No posts yet.</p>}
-      </ul>
-
-      <ReplyForm category={params.category} slug={params.slug} />
-    </div>
+  const { posts, nextCursor, title } = await getThread(
+    category,
+    slug,
+    searchParams.cursor
   );
-}
 
-function ReplyForm({ category, slug }: { category: string; slug: string }) {
+  async function removePost(id: string) {
+    "use server";
+    const cookie = (await cookies()).toString();
+    const h = await headers();
+    const origin =
+      h.get("origin") ??
+      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
+    const res = await fetch(`${origin}/api/forum/posts/${id}`, {
+      method: "DELETE",
+      headers: { cookie },
+      cache: "no-store",
+    });
+
+    if (!res.ok && res.status !== 204) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`Failed to delete (${res.status}): ${text}`);
+    }
+
+    // ✅ используем category/slug
+    revalidatePath(`/forum/${category}/${slug}`);
+  }
+
+  // server action для отправки ответа
   async function send(formData: FormData) {
     "use server";
 
@@ -84,25 +98,65 @@ function ReplyForm({ category, slug }: { category: string; slug: string }) {
       throw new Error(`Failed to reply (${res.status}): ${text}`);
     }
 
-    // Без перезагрузки страницы: инвалидация текущего маршрута
+    // ✅ используем category/slug
     revalidatePath(`/forum/${category}/${slug}`);
-    // Возвращать ничего не нужно — RSC перерендерится автоматически
   }
 
   return (
-    <form
-      action={send}
-      className="border border-neutral-800 rounded-xl p-4 space-y-2"
-    >
-      <h2 className="text-lg font-medium">Reply</h2>
-      <textarea
-        name="content"
-        placeholder="Your reply (markdown)"
-        className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-        rows={5}
-      />
-      <button className="rounded bg-white text-black px-4 py-2">Send</button>
-      <p className="opacity-60 text-xs">Requires sign-in.</p>
-    </form>
+    <div className="space-y-6">
+      <div>
+        <a
+          className="text-sm opacity-70 hover:underline"
+          href={`/forum/${category}`} // ✅
+        >
+          ← Back
+        </a>
+        <h1 className="text-2xl font-semibold mt-2">{title}</h1>
+      </div>
+
+      <ul className="grid gap-3">
+        {posts.map((p: any) => (
+          <li key={p.id} className="border border-neutral-800 rounded-xl p-4">
+            <p className="opacity-60 text-xs mb-2">
+              {p.author?.profile?.displayName ??
+                p.author?.profile?.username ??
+                "user"}
+            </p>
+
+            <Markdown>{p.markdown ?? ""}</Markdown>
+
+            <p className="opacity-50 text-xs mt-2">{timeAgo(p.createdAt)}</p>
+
+            {me && me === p.authorId && (
+              <form action={removePost.bind(null, p.id)} className="pt-2">
+                <button
+                  type="submit"
+                  className="text-xs opacity-70 hover:opacity-100 underline"
+                >
+                  Delete
+                </button>
+              </form>
+            )}
+          </li>
+        ))}
+        {posts.length === 0 && <p className="opacity-60">No posts yet.</p>}
+      </ul>
+
+      {nextCursor && (
+        <div className="pt-2">
+          <Link
+            href={`/forum/${category}/${slug}?cursor=${nextCursor}`} // ✅
+            className="rounded bg-neutral-900 px-3 py-2 text-sm hover:bg-neutral-800"
+          >
+            Load more posts
+          </Link>
+        </div>
+      )}
+
+      <ReplyFormClient action={send} />
+
+      {/* 🔴 Невидимый SSE-подписчик — обновляет ленту постов в реальном времени */}
+      <ThreadLiveClient category={category} slug={slug} /> {/* ✅ */}
+    </div>
   );
 }
