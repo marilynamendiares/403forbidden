@@ -36,28 +36,29 @@ enum BookType {
 
 // ---------- Core ----------
 model User {
-  id             String   @id @default(cuid())
-  email          String   @unique
+  id             String    @id @default(cuid())
+  email          String    @unique
   hashedPassword String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-  accounts      Account[]
-  sessions      Session[]
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  accounts       Account[]
+  sessions       Session[]
 
-  profile       Profile?
-  roles         UserRole[]
-  books         Book[]
-  pages         Page[]        // ← backref for Page.owner
-  threads       ForumThread[]
-  posts         ForumPost[]
-  comments      Comment[]
-  reactions     Reaction[]
-  follows       Follow[] @relation("UserFollows")
-  followers     Follow[] @relation("UserFollowers")
-  notifications Notification[]
-  collaborators Collaborator[]
-  editAudits    EditAudit[]
-  turns         TurnQueue[]   // ← backref for TurnQueue.user
+  profile          Profile?
+  roles            UserRole[]
+  books            Book[]
+  pages            Page[] // ← backref for Page.owner
+  threads          ForumThread[]
+  posts            ForumPost[]
+  comments         Comment[]
+  reactions        Reaction[]
+  follows          Follow[]       @relation("UserFollows")
+  followers        Follow[]       @relation("UserFollowers")
+  notifications    Notification[]
+  collaborators    Collaborator[]
+  editAudits       EditAudit[]
+  turns            TurnQueue[] // ← backref for TurnQueue.user
+  chaptersAuthored Chapter[]      @relation("ChapterAuthor")
 }
 
 model Profile {
@@ -89,54 +90,60 @@ model Page {
 
 // ---------- Books & Chapters ----------
 model Book {
-  id           String     @id @default(cuid())
-  ownerId      String
-  owner        User       @relation(fields: [ownerId], references: [id])
-  title        String
-  slug         String
-  tagline      String?
-  coverUrl     String?
-  status       BookStatus @default(ONGOING)
-  type         BookType   @default(SOLO)
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id        String     @id @default(cuid())
+  ownerId   String
+  owner     User       @relation(fields: [ownerId], references: [id])
+  title     String
+  slug      String
+  tagline   String?
+  coverUrl  String?
+  status    BookStatus @default(ONGOING)
+  type      BookType   @default(SOLO)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
-  chapters     Chapter[]
-  tags         BookTag[]
-  followers    Follow[]
+  chapters      Chapter[]
+  tags          BookTag[]
+  followers     Follow[]
   collaborators Collaborator[]
-  turns        TurnQueue[]
+  turns         TurnQueue[]
 
   @@unique([ownerId, slug])
 }
 
 model Chapter {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   bookId      String
-  book        Book      @relation(fields: [bookId], references: [id])
+  book        Book        @relation(fields: [bookId], references: [id])
   index       Int
   title       String
   content     Json
   markdown    String?
-  isDraft     Boolean    @default(true)
+  isDraft     Boolean     @default(true)
   publishedAt DateTime?
-  version     Int        @default(1)
+  version     Int         @default(1)
   publishRole CollabRole?
 
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  // NEW ↓↓↓
+  authorId String? // сначала nullable
+  author   User?   @relation(name: "ChapterAuthor", fields: [authorId], references: [id])
 
-  comments    Comment[]
-  editAudits  EditAudit[]   // ← backref for EditAudit.chapter
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  comments   Comment[]
+  editAudits EditAudit[]
 
   @@unique([bookId, index])
   @@index([bookId, isDraft, publishedAt(sort: Desc)])
+  // NEW (удобно фильтровать мои черновики)
+  @@index([authorId])
 }
 
 // ---------- Forum ----------
 model ForumCategory {
-  id      String @id @default(cuid())
-  slug    String @unique
+  id      String        @id @default(cuid())
+  slug    String        @unique
   title   String
   desc    String?
   threads ForumThread[]
@@ -152,10 +159,11 @@ model ForumThread {
   slug       String
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+  locked     Boolean       @default(false) // ← NEW
 
-  posts           ForumPost[]
-  tags            ThreadTag[]
-  followsThread   Follow[] @relation("FollowThread") // ← backref for Follow.thread
+  posts         ForumPost[]
+  tags          ThreadTag[]
+  followsThread Follow[]    @relation("FollowThread")
 
   @@unique([categoryId, slug])
   @@index([categoryId, createdAt])
@@ -173,26 +181,26 @@ model ForumPost {
   updatedAt DateTime    @updatedAt
 
   comments   Comment[]
-  editAudits EditAudit[]   // ← backref for EditAudit.post
+  editAudits EditAudit[] // ← backref for EditAudit.post
 
   @@index([threadId, createdAt])
 }
 
 // ---------- Social ----------
 model Comment {
-  id        String   @id @default(cuid())
-  authorId  String
-  author    User     @relation(fields: [authorId], references: [id])
+  id       String @id @default(cuid())
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
 
   // polymorphic target
   chapterId String?
-  chapter   Chapter?  @relation(fields: [chapterId], references: [id])
+  chapter   Chapter?   @relation(fields: [chapterId], references: [id])
   postId    String?
   post      ForumPost? @relation(fields: [postId], references: [id])
 
-  parentId  String?
-  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
-  replies   Comment[] @relation("CommentReplies")
+  parentId String?
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
 
   content   Json
   markdown  String?
@@ -201,18 +209,18 @@ model Comment {
 }
 
 model Tag {
-  id        String     @id @default(cuid())
-  name      String     @unique
-  slug      String     @unique
-  bookTags  BookTag[]  // ← backrefs
+  id         String      @id @default(cuid())
+  name       String      @unique
+  slug       String      @unique
+  bookTags   BookTag[] // ← backrefs
   threadTags ThreadTag[]
 }
 
 model BookTag {
   bookId String
   tagId  String
-  book   Book @relation(fields: [bookId], references: [id])
-  tag    Tag  @relation(fields: [tagId], references: [id])
+  book   Book   @relation(fields: [bookId], references: [id])
+  tag    Tag    @relation(fields: [tagId], references: [id])
 
   @@id([bookId, tagId])
 }
@@ -239,15 +247,15 @@ model Reaction {
 }
 
 model Follow {
-  id         String  @id @default(cuid())
+  id         String @id @default(cuid())
   followerId String
-  follower   User    @relation("UserFollows", fields: [followerId], references: [id])
+  follower   User   @relation("UserFollows", fields: [followerId], references: [id])
 
   // targets
-  userId   String?
-  user     User?       @relation("UserFollowers", fields: [userId], references: [id])
-  bookId   String?
-  book     Book?       @relation(fields: [bookId], references: [id])
+  userId String?
+  user   User?   @relation("UserFollowers", fields: [userId], references: [id])
+  bookId String?
+  book   Book?   @relation(fields: [bookId], references: [id])
 
   threadId String?
   thread   ForumThread? @relation("FollowThread", fields: [threadId], references: [id])
@@ -258,58 +266,55 @@ model Follow {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
+  id        String    @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
   type      String
   payload   Json
   readAt    DateTime?
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
 }
 
 // ---------- Collaboration ----------
 model Collaborator {
   id        String     @id @default(cuid())
-  userId    String
   user      User       @relation(fields: [userId], references: [id])
-
-  // target: book or page
-  bookId    String?
+  userId    String
   book      Book?      @relation(fields: [bookId], references: [id])
-  pageId    String?
+  bookId    String?
   page      Page?      @relation(fields: [pageId], references: [id])
-
+  pageId    String?
   role      CollabRole
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@unique([userId, bookId, pageId])
 }
 
 model TurnQueue {
-  id         String   @id @default(cuid())
+  id         String  @id @default(cuid())
   bookId     String
-  book       Book     @relation(fields: [bookId], references: [id])
+  book       Book    @relation(fields: [bookId], references: [id])
   userId     String
-  user       User     @relation(fields: [userId], references: [id])
+  user       User    @relation(fields: [userId], references: [id])
   order      Int
-  timeoutSec Int      @default(172800) // 48h
-  active     Boolean  @default(true)
+  timeoutSec Int     @default(172800) // 48h
+  active     Boolean @default(true)
 
   @@unique([bookId, userId])
   @@unique([bookId, order])
 }
 
 model EditAudit {
-  id        String   @id @default(cuid())
+  id        String     @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
   chapterId String?
-  chapter   Chapter? @relation(fields: [chapterId], references: [id])
+  chapter   Chapter?   @relation(fields: [chapterId], references: [id])
   postId    String?
   post      ForumPost? @relation(fields: [postId], references: [id])
   diff      Json
-  createdAt DateTime @default(now())
+  createdAt DateTime   @default(now())
 }
 
 // ---------- RBAC ----------
@@ -330,8 +335,8 @@ model Permission {
 model UserRole {
   userId String
   roleId String
-  user   User @relation(fields: [userId], references: [id])
-  role   Role @relation(fields: [roleId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  role   Role   @relation(fields: [roleId], references: [id])
 
   @@id([userId, roleId])
 }
@@ -339,8 +344,8 @@ model UserRole {
 model RolePermission {
   roleId       String
   permissionId String
-  role         Role        @relation(fields: [roleId], references: [id])
-  permission   Permission  @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
+  permission   Permission @relation(fields: [permissionId], references: [id])
 
   @@id([roleId, permissionId])
 }

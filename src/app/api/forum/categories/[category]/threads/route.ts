@@ -3,28 +3,40 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { z } from "zod";
 import { slugify } from "@/lib/slug";
+import type { NextRequest } from "next/server";
 
-type Params = { params: { category: string } };
+type Ctx = { params: Promise<{ category: string }> };
 
-export async function GET(_: Request, { params }: Params) {
-  const category = await prisma.forumCategory.findUnique({
-    where: { slug: params.category },
+export async function GET(req: NextRequest, { params }: Ctx) {
+  const { category } = await params;
+
+  const cat = await prisma.forumCategory.findUnique({
+    where: { slug: category },
     select: { id: true },
   });
-  if (!category) return new Response("Category not found", { status: 404 });
+  if (!cat) return new Response("Category not found", { status: 404 });
 
-  const url = new URL(_.url);
+  const url = new URL(req.url);
   const cursor = url.searchParams.get("cursor") ?? undefined;
   const take = Math.min(Number(url.searchParams.get("take") ?? 20), 50);
 
   const threads = await prisma.forumThread.findMany({
-    where: { categoryId: category.id },
+    where: { categoryId: cat.id },
     orderBy: { createdAt: "desc" },
     take: take + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: {
-      id: true, slug: true, title: true, createdAt: true, updatedAt: true,
-      author: { select: { id: true, profile: { select: { username: true, displayName: true } } } },
+      id: true,
+      slug: true,
+      title: true,
+      createdAt: true,
+      updatedAt: true,
+      author: {
+        select: {
+          id: true,
+          profile: { select: { username: true, displayName: true } },
+        },
+      },
       _count: { select: { posts: true } },
     },
   });
@@ -43,16 +55,18 @@ const CreateThread = z.object({
   content: z.string().trim().min(1).max(20_000),
 });
 
-export async function POST(req: Request, { params }: Params) {
+export async function POST(req: NextRequest, { params }: Ctx) {
+  const { category } = await params;
+
   const session = await getServerSession(authOptions);
   const userId = (session as any)?.userId as string | undefined;
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
-  const category = await prisma.forumCategory.findUnique({
-    where: { slug: params.category },
+  const cat = await prisma.forumCategory.findUnique({
+    where: { slug: category },
     select: { id: true },
   });
-  if (!category) return new Response("Category not found", { status: 404 });
+  if (!cat) return new Response("Category not found", { status: 404 });
 
   const body = await req.json().catch(() => null);
   const parsed = CreateThread.safeParse(body);
@@ -62,16 +76,21 @@ export async function POST(req: Request, { params }: Params) {
 
   const base = slugify(title);
   let slug = base || "thread";
+
   for (let i = 0; i < 3; i++) {
     try {
       const thread = await prisma.forumThread.create({
         data: {
-          categoryId: category.id,
+          categoryId: cat.id,
           authorId: userId,
           title,
           slug,
           posts: {
-            create: { authorId: userId, content: { type: "markdown", value: content }, markdown: content },
+            create: {
+              authorId: userId,
+              content: { type: "markdown", value: content },
+              markdown: content,
+            },
           },
         },
         select: { id: true, slug: true },
@@ -81,5 +100,6 @@ export async function POST(req: Request, { params }: Params) {
       slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
     }
   }
+
   return new Response("Cannot create thread", { status: 500 });
 }
