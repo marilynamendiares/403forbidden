@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import BooksLiveClient from "@/components/BooksLiveClient";
 
 export const dynamic = "force-dynamic";
 
@@ -74,6 +75,7 @@ export default async function BooksPage() {
         <button className="rounded bg-white text-black px-4 py-2">Create</button>
         <p className="opacity-60 text-xs">Requires sign-in.</p>
       </form>
+      <BooksLiveClient />
     </div>
   );
 }

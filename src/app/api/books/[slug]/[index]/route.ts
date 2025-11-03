@@ -7,7 +7,6 @@ import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getRole } from "@/server/access";
-// NEW: эмиттер событий
 import { emit } from "@/server/events";
 
 type Ctx = { params: Promise<{ slug: string; index: string }> };
@@ -33,6 +32,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       isDraft: true,
       publishedAt: true,
       updatedAt: true,
+      status: true, // ← NEW: вернуть статус главы
       authorId: true,
       author: {
         select: {
@@ -78,6 +78,7 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       isDraft: chapter.isDraft,
       publishedAt: chapter.publishedAt,
       updatedAt: chapter.updatedAt,
+      status: chapter.status, // ← NEW
     },
     author: {
       id: chapter.author?.id ?? null,
@@ -92,14 +93,17 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 // ─────────────────────────────────────────────────────────────────────────────
 /**
  * PATCH: редактирование главы
- *  • OWNER — может редактировать любую
- *  • EDITOR — только если он author этой главы
+ *  • OWNER — может всё
+ *  • EDITOR — может редактировать только свою (authorId === me) по title/content
+ *            и может менять status (OPEN/CLOSED) даже если не author
+ *  • publish — только OWNER
  */
 // ─────────────────────────────────────────────────────────────────────────────
 const UpdateSchema = z.object({
   title: z.string().min(2).max(140).optional(),
   content: z.string().min(1).optional(),
-  publish: z.boolean().optional(), // публикацию применим только для OWNER ниже
+  publish: z.boolean().optional(),
+  status: z.enum(["OPEN", "CLOSED"]).optional(), // ← NEW
 });
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
@@ -109,7 +113,12 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const data = parsed.data;
 
   // если ничего менять не попросили — 400
-  if (data.title === undefined && data.content === undefined && data.publish === undefined) {
+  if (
+    data.title === undefined &&
+    data.content === undefined &&
+    data.publish === undefined &&
+    data.status === undefined // ← NEW
+  ) {
     return new Response("Nothing to update", { status: 400 });
   }
 
@@ -123,48 +132,81 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   }
 
   // Берём главу вместе с владельцем книги
-  // FIX: добавили выборку bookId, т.к. ниже вызывается getRole(me, chapter.bookId)
   const chapter = await prisma.chapter.findFirst({
     where: { book: { slug }, index: idx },
     select: {
       id: true,
       authorId: true,
-      bookId: true, // ← добавлено
+      bookId: true,
       book: { select: { ownerId: true } },
     },
   });
   if (!chapter) return new Response("Not found", { status: 404 });
 
-  const myRole = await getRole(me, chapter.bookId);
+  const myRole = (await getRole(me, chapter.bookId)) as
+    | "OWNER"
+    | "EDITOR"
+    | "AUTHOR"
+    | "VIEWER"
+    | null;
+
   const isOwner = chapter.book.ownerId === me;
   const isEditorAndAuthor = myRole === "EDITOR" && chapter.authorId === me;
 
-  if (!isOwner && !isEditorAndAuthor) {
-    return new Response("Forbidden", { status: 403 });
+  // запрошенные операции
+  const wantsTitle = data.title !== undefined;
+  const wantsContent = data.content !== undefined;
+  const wantsPublish = data.publish !== undefined;
+  const wantsStatus = data.status !== undefined;
+
+  // Проверка прав:
+  // OWNER — всегда ок
+  if (!isOwner) {
+    // publish — только OWNER
+    if (wantsPublish) return new Response("Forbidden", { status: 403 });
+
+    // title/content — EDITOR только если он автор этой главы
+    if ((wantsTitle || wantsContent) && !isEditorAndAuthor) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    // status — любой EDITOR (даже если не автор); AUTHOR/VIEWER — нельзя
+    if (wantsStatus && myRole !== "EDITOR") {
+      return new Response("Forbidden", { status: 403 });
+    }
   }
+
+  const dataToApply: Record<string, unknown> = {
+    ...(wantsTitle ? { title: data.title } : {}),
+    ...(wantsContent
+      ? {
+          markdown: data.content,
+          content: { type: "markdown", value: data.content },
+        }
+      : {}),
+    ...(wantsPublish && isOwner
+      ? {
+          isDraft: !data.publish,
+          publishedAt: data.publish ? new Date() : null,
+        }
+      : {}),
+    ...(wantsStatus ? { status: data.status } : {}), // ← NEW
+  };
 
   const updated = await prisma.chapter.update({
     where: { id: chapter.id },
-    data: {
-      ...(data.title ? { title: data.title } : {}),
-      ...(data.content
-        ? {
-            markdown: data.content,
-            content: { type: "markdown", value: data.content },
-          }
-        : {}),
-      ...(typeof data.publish === "boolean" && isOwner
-        ? {
-            isDraft: !data.publish,
-            publishedAt: data.publish ? new Date() : null,
-          }
-        : {}),
+    data: dataToApply,
+    select: {
+      id: true,
+      title: true,
+      updatedAt: true,
+      publishedAt: true,
+      status: true, // ← NEW
     },
-    select: { id: true, title: true, updatedAt: true, publishedAt: true, /* useful for UI */ },
   });
 
-  // NEW: эмит события после успешного обновления
-  emit("chapter:updated", {
+  // эмит события после успешного обновления
+  await emit("chapter:updated", {
     slug,
     index: idx,
     chapterId: updated.id,
@@ -172,9 +214,19 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     at: Date.now(),
   });
 
-  // (необязательно) отдельный ивент при публикации
-  if (typeof data.publish === "boolean" && isOwner) {
-    emit(data.publish ? "chapter:published" : "chapter:unpublished", {
+  // если меняли publish — отдельный ивент
+  if (wantsPublish && isOwner) {
+    await emit(data.publish ? "chapter:published" : "chapter:unpublished", {
+      slug,
+      index: idx,
+      chapterId: updated.id,
+      at: Date.now(),
+    });
+  }
+
+  // если меняли статус — отдельный ивент
+  if (wantsStatus) {
+    await emit(`chapter:${data.status === "OPEN" ? "opened" : "closed"}`, {
       slug,
       index: idx,
       chapterId: updated.id,
@@ -215,7 +267,12 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   });
   if (!chapter) return new Response("Not found", { status: 404 });
 
-  const myRole = await getRole(me, chapter.bookId);
+  const myRole = (await getRole(me, chapter.bookId)) as
+    | "OWNER"
+    | "EDITOR"
+    | "AUTHOR"
+    | "VIEWER"
+    | null;
   const isOwner = chapter.book.ownerId === me;
   const canEditorDeleteOwn = myRole === "EDITOR" && chapter.authorId === me;
 
@@ -225,8 +282,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
 
   await prisma.chapter.delete({ where: { id: chapter.id } });
 
-  // NEW: эмит события удаления
-  emit("chapter:deleted", {
+  await emit("chapter:deleted", {
     slug,
     index: idx,
     chapterId: chapter.id,

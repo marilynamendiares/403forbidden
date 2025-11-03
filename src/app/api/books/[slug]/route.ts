@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { requireRole } from "@/server/access";
 import type { NextRequest } from "next/server";
+import { emit } from "@/server/events"; // 🆕 добавили
 
 type Ctx = { params: Promise<{ slug: string }> };
 
@@ -25,7 +26,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
         { collaborators: { some: { userId, pageId: null } } },
       ],
     },
-    select: { id: true },
+    select: { id: true, slug: true }, // 🆕 нужен slug для эмита
   });
   if (!book) return new Response("Not found", { status: 404 });
 
@@ -38,5 +39,9 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
     await tx.book.delete({ where: { id: book.id } });
   });
 
-  return Response.json({ ok: true });
+  // 🟢 SSE: уведомим список книг
+  emit("book:deleted", { id: book.id, slug: book.slug, at: Date.now() });
+
+  // 204 — классический ответ на успешный DELETE
+  return new Response(null, { status: 204 });
 }

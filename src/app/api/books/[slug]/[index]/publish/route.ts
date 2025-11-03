@@ -6,6 +6,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
 import { requireRole } from "@/server/access";
+import { queueEvent, drainOutbox } from "@/server/notify/queue";
+import { emit } from "@/server/events"; // ← ВАЖНО: публичные SSE-события
 
 type Ctx = { params: Promise<{ slug: string; index: string }> };
 
@@ -13,7 +15,8 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
   const { slug, index } = await params;
 
   const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
+  // поддерживаем оба варианта до полной миграции
+  const userId = (session?.user?.id ?? (session as any)?.userId) as string | undefined;
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
   const idx = Number(index);
@@ -23,21 +26,93 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
 
   const chapter = await prisma.chapter.findFirst({
     where: { book: { slug }, index: idx },
-    select: { id: true, isDraft: true, bookId: true },
+    select: {
+      id: true,
+      isDraft: true,
+      bookId: true,
+      book: { select: { slug: true, ownerId: true } },
+    },
   });
   if (!chapter) return new Response("Not found", { status: 404 });
 
-  // По roadmap публиковать могут OWNER и EDITOR
   await requireRole(userId, chapter.bookId, "EDITOR");
 
   if (!chapter.isDraft) {
     return Response.json({ ok: true, alreadyPublished: true });
   }
 
-  await prisma.chapter.update({
+  const updated = await prisma.chapter.update({
     where: { id: chapter.id },
     data: { isDraft: false, publishedAt: new Date() },
+    select: {
+      id: true,
+      index: true,
+      bookId: true,
+      book: { select: { slug: true, ownerId: true } },
+    },
   });
 
-  return Response.json({ ok: true });
+  // ===== Получатели нотификаций (колокольчик) ==================================
+  const [collabs, followers] = await Promise.all([
+    prisma.collaborator.findMany({
+      where: { bookId: updated.bookId },
+      select: { userId: true },
+    }),
+    // ⚠️ используем НОВУЮ таблицу фолловеров книги: BookFollow
+    prisma.bookFollow.findMany({
+      where: { bookId: updated.bookId },
+      select: { userId: true },
+    }),
+  ]);
+
+  // множество id фолловеров (для проверки: фоловит ли автор)
+  const followerIds = new Set<string>(followers.map(f => f.userId));
+
+  const recipients = new Set<string>();
+
+  // владелец книги
+  recipients.add(updated.book.ownerId);
+
+  // коллабораторы
+  collabs.forEach((c) => recipients.add(c.userId));
+
+  // фолловеры (BookFollow)
+  followerIds.forEach((id) => recipients.add(id));
+
+  // ✅ Автор получает уведомление ТОЛЬКО если он фоловит книгу.
+  // Если не фоловит — удаляем его из получателей.
+  if (!followerIds.has(userId)) {
+    recipients.delete(userId);
+  }
+
+  await queueEvent({
+    kind: "chapter.published",
+    actorId: userId,
+    target: { type: "chapter", id: updated.id },
+    recipients: [...recipients],
+    payload: {
+      bookId: updated.bookId,
+      bookSlug: updated.book.slug,
+      chapterIndex: updated.index,
+    },
+  });
+
+  // 🔴 Эмитим событие, которое слушает ChaptersLiveClient
+  await emit("chapter:published", {
+    slug: updated.book.slug,
+    id: updated.id,
+  });
+
+  // DEV: авто-дренаж для мгновенной проверки
+  let drained: { polled: number; created: number; errors: number } | undefined;
+  if (process.env.NODE_ENV !== "production") {
+    drained = await drainOutbox({ limit: 100 });
+  }
+
+  return Response.json({
+    ok: true,
+    id: updated.id,
+    recipientsCount: recipients.size,
+    drained: drained ?? null,
+  });
 }

@@ -1,10 +1,12 @@
+// src/app/api/books/route.ts
 import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { requireRole } from "@/server/access";
+// import { requireRole } from "@/server/access"; // (не используется здесь)
 import { z } from "zod";
 import { slugify } from "@/lib/slug";
 import type { NextRequest } from "next/server";
+import { emit } from "@/server/events"; // 🆕 добавили
 
 // Список книг
 export async function GET(_req: NextRequest) {
@@ -51,8 +53,17 @@ export async function POST(req: NextRequest) {
           slug,
           tagline: tagline ?? null,
         },
-        select: { slug: true },
+        select: { id: true, slug: true, title: true }, // 🆕 вернём id/title — пригодится
       });
+
+      // 🟢 SSE: сообщаем списку книг, что появилась новая
+      emit("book:created", {
+        id: created.id,
+        slug: created.slug,
+        title: created.title,
+        at: Date.now(),
+      });
+
       return Response.json(created, { status: 201 });
     } catch (e: any) {
       // потенциальный конфликт уникальности — меняем slug и ретраим

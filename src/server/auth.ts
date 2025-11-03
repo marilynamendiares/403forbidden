@@ -57,33 +57,36 @@ export const authOptions: NextAuthOptions = {
   ],
 
   callbacks: {
-    // пробрасываем id пользователя в сессию
-    async session({ session, token }) {
-      if (token?.sub) (session as any).userId = token.sub;
-      return session;
-    },
+  async session({ session, token }) {
+    // гарантируем объект user
+    if (!session.user) session.user = {} as any;
 
-    // jwt без изменений
-    async jwt({ token }) {
-      return token;
-    },
+    // id пользователя берём из token.sub (JWT стратегия)
+    const uid = token?.sub ?? null;
 
-    // безопасные редиректы после signIn/signOut
-    async redirect({ url, baseUrl }) {
-      // относительные пути → внутрь приложения
-      if (url.startsWith("/")) return `${baseUrl}${url}`;
+    if (uid) {
+      // новый «правильный» путь
+      (session.user as { id: string }).id = uid;
+      // обратная совместимость со ВСЕМ старым кодом
+      (session as any).userId = uid;
+    }
 
-      // абсолютные урлы: разрешаем только свой origin
-      try {
-        const u = new URL(url);
-        const b = new URL(baseUrl);
-        if (u.origin === b.origin) return url;
-      } catch {
-        // игнор, упадём в fallback
-      }
-
-      // fallback — на главную
-      return baseUrl;
-    },
+    return session;
   },
-};
+
+  async jwt({ token }) {
+    // ничего не меняем — token.sub уже содержит user.id
+    return token;
+  },
+
+  async redirect({ url, baseUrl }) {
+    if (url.startsWith("/")) return `${baseUrl}${url}`;
+    try {
+      const u = new URL(url);
+      const b = new URL(baseUrl);
+      if (u.origin === b.origin) return url;
+    } catch {}
+    return baseUrl;
+  },
+},
+}

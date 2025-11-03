@@ -16,6 +16,12 @@ enum BookStatus {
   HIATUS
 }
 
+// +++ NEW: статус главы
+enum ChapterStatus {
+  OPEN
+  CLOSED
+}
+
 enum ReactionTarget {
   CHAPTER
   POST
@@ -59,6 +65,10 @@ model User {
   editAudits       EditAudit[]
   turns            TurnQueue[] // ← backref for TurnQueue.user
   chaptersAuthored Chapter[]      @relation("ChapterAuthor")
+  BookFollow       BookFollow[]
+
+  // NEW: посты внутри глав (обратная связь из ChapterPost.author)
+  chapterPosts ChapterPost[]
 }
 
 model Profile {
@@ -107,6 +117,7 @@ model Book {
   followers     Follow[]
   collaborators Collaborator[]
   turns         TurnQueue[]
+  BookFollow    BookFollow[]
 
   @@unique([ownerId, slug])
 }
@@ -124,19 +135,46 @@ model Chapter {
   version     Int         @default(1)
   publishRole CollabRole?
 
-  // NEW ↓↓↓
-  authorId String? // сначала nullable
+  // Автор главы (для фильтров/видимости черновиков)
+  authorId String?
   author   User?   @relation(name: "ChapterAuthor", fields: [authorId], references: [id])
+
+  // NEW: открыта/закрыта для постинга
+  status ChapterStatus @default(OPEN)
+
+  // NEW: дата последнего поста (для сортировки/списков)
+  lastPostAt DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // NEW: посты внутри главы (append-only поток)
+  posts ChapterPost[]
 
   comments   Comment[]
   editAudits EditAudit[]
 
   @@unique([bookId, index])
   @@index([bookId, isDraft, publishedAt(sort: Desc)])
-  // NEW (удобно фильтровать мои черновики)
+  @@index([authorId])
+  @@index([lastPostAt(sort: Desc)])
+}
+
+// +++ NEW: атом поста внутри главы
+model ChapterPost {
+  id        String  @id @default(cuid())
+  chapterId String
+  chapter   Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  contentMd   String
+  contentHtml String? // заполнится в 1.7 (sanitize→render)
+  createdAt   DateTime  @default(now())
+  editedAt    DateTime?
+
+  @@index([chapterId, createdAt, id]) // стабильный курсор (createdAt,id)
   @@index([authorId])
 }
 
@@ -265,16 +303,6 @@ model Follow {
   @@unique([followerId, userId, bookId, threadId])
 }
 
-model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id])
-  type      String
-  payload   Json
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
-}
-
 // ---------- Collaboration ----------
 model Collaborator {
   id        String     @id @default(cuid())
@@ -383,4 +411,53 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  userId     String
+  type       String
+  actorId    String?
+  targetType String
+  targetId   String
+  payload    Json?
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  User       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
+
+model Subscription {
+  id        String   @id @default(cuid())
+  userId    String
+  topicType String
+  topicId   String
+  level     String // ALL | MENTIONS | NONE
+  createdAt DateTime @default(now())
+
+  @@unique([userId, topicType, topicId])
+}
+
+model OutboxEvent {
+  id         String   @id @default(cuid())
+  kind       String
+  entityType String
+  entityId   String
+  payload    Json?
+  status     String   @default("pending")
+  createdAt  DateTime @default(now())
+}
+
+model BookFollow {
+  id        String   @id @default(cuid())
+  userId    String
+  bookId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  book Book @relation(fields: [bookId], references: [id])
+
+  @@unique([userId, bookId])
+  @@index([bookId, createdAt])
 }

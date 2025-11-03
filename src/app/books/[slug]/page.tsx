@@ -7,6 +7,9 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
+import ChaptersLiveClient from "@/components/ChaptersLiveClient"; // ← NEW: realtime списка глав
+import { getBookBySlug, getFollowStatus } from "@/server/follow";
+import { FollowBookButton } from "@/components/follow/FollowBookButton";
 
 // ===== Next.js runtime =========================================================
 export const dynamic = "force-dynamic";
@@ -74,7 +77,13 @@ export default async function BookPage({
 
   // ----- Auth session (to derive role correctly) --------------------------------
   const session = await getServerSession(authOptions);
-  const me = (session as any)?.userId as string | undefined;
+  const me = session?.user?.id ?? null;
+
+  // ----- Book meta for follow button (id needed) --------------------------------
+const bookMeta = await getBookBySlug(slug); // может быть null, если книга не найдена
+const followInitial =
+  bookMeta ? await getFollowStatus(me, bookMeta.id) : { followed: false, count: 0 };
+
 
   // ----- Fetch data -------------------------------------------------------------
   const [{ book, chapters }, collabData] = await Promise.all([
@@ -173,7 +182,7 @@ export default async function BookPage({
     revalidatePath(`/books/${slug}`);
   }
 
-  // ===== Render =================================================================
+  // ===== Render (JSX) ===========================================================
   return (
     <div className="space-y-6">
       {/* -- Breadcrumb ----------------------------------------------------------- */}
@@ -183,35 +192,45 @@ export default async function BookPage({
 
       {/* -- Header + Delete book ------------------------------------------------ */}
       <div className="flex items-center justify-between">
-  <div className="flex items-center gap-2">
-    <h1 className="text-2xl font-semibold">{book.title}</h1>
-    {(meRole === "OWNER" || meRole === "EDITOR") && (
-      <span
-        className={
-          "rounded-full border px-2 py-0.5 text-xs " +
-          (meRole === "OWNER"
-            ? "border-amber-700 text-amber-400"
-            : "border-blue-700 text-blue-400")
-        }
-        title={meRole === "OWNER" ? "You are the owner" : "You are an editor"}
-      >
-        {meRole.toLowerCase()}
-      </span>
-    )}
-  </div>
+        <div className="flex items-center gap-3">
+  <h1 className="text-2xl font-semibold">{book.title}</h1>
 
-  {canEditBook && (
-    <form action={deleteBook}>
-      <button
-        className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-red-50/10 disabled:opacity-50"
-        title="Delete book"
-      >
-        Delete book
-      </button>
-    </form>
+  {/* FOLLOW button (скрываем, если не нашли мету книги) */}
+  {bookMeta && (
+    <FollowBookButton
+      slug={slug}
+      initialFollowed={followInitial.followed}
+      initialCount={followInitial.count}
+    />
+  )}
+
+  {(meRole === "OWNER" || meRole === "EDITOR") && (
+    <span
+      className={
+        "rounded-full border px-2 py-0.5 text-xs " +
+        (meRole === "OWNER"
+          ? "border-amber-700 text-amber-400"
+          : "border-blue-700 text-blue-400")
+      }
+      title={meRole === "OWNER" ? "You are the owner" : "You are an editor"}
+    >
+      {meRole.toLowerCase()}
+    </span>
   )}
 </div>
 
+
+        {canEditBook && (
+          <form action={deleteBook}>
+            <button
+              className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-red-50/10 disabled:opacity-50"
+              title="Delete book"
+            >
+              Delete book
+            </button>
+          </form>
+        )}
+      </div>
 
       {/* -- Chapters list -------------------------------------------------------- */}
       <section>
@@ -220,58 +239,61 @@ export default async function BookPage({
           {chapters.length === 0 && <p className="opacity-60">No chapters yet.</p>}
 
           {chapters.map((c: any) => {
-  const isDraft = !c.publishedAt;
-  return (
-    <li
-      key={c.id}
-      className={
-        "rounded-xl border p-4 " +
-        (isDraft
-          ? "border-neutral-800 bg-neutral-950/40 opacity-90"
-          : "border-neutral-800")
-      }
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className={"text-sm " + (isDraft ? "opacity-50" : "opacity-70")}>#{c.index}</p>
-          <Link
-            href={`/books/${slug}/${c.index}`}
-            className={
-              "text-base font-medium hover:underline " +
-              (isDraft ? "text-neutral-300" : "")
-            }
-          >
-            {c.title}
-          </Link>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <span
-            className={
-              "text-xs px-2 py-1 rounded border " +
-              (isDraft ? "border-neutral-800 text-neutral-400" : "border-neutral-700")
-            }
-          >
-            {isDraft ? "draft" : "published"}
-          </span>
-
-          {canEditBook && isDraft && (
-            <form action={publishChapter}>
-              <input type="hidden" name="index" value={c.index} />
-              <button
-                className="rounded-xl border border-neutral-700 px-3 py-2 text-xs hover:bg-emerald-50/10"
-                title="Publish chapter"
+            const isDraft = !c.publishedAt;
+            return (
+              <li
+                key={c.id}
+                className={
+                  "rounded-xl border p-4 " +
+                  (isDraft
+                    ? "border-neutral-800 bg-neutral-950/40 opacity-90"
+                    : "border-neutral-800")
+                }
               >
-                Publish
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    </li>
-  );
-})}
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className={"text-sm " + (isDraft ? "opacity-50" : "opacity-70")}>
+                      #{c.index}
+                    </p>
+                    <Link
+                      href={`/books/${slug}/${c.index}`}
+                      className={
+                        "text-base font-medium hover:underline " +
+                        (isDraft ? "text-neutral-300" : "")
+                      }
+                    >
+                      {c.title}
+                    </Link>
+                  </div>
 
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={
+                        "text-xs px-2 py-1 rounded border " +
+                        (isDraft
+                          ? "border-neutral-800 text-neutral-400"
+                          : "border-neutral-700")
+                      }
+                    >
+                      {isDraft ? "draft" : "published"}
+                    </span>
+
+                    {canEditBook && isDraft && (
+                      <form action={publishChapter}>
+                        <input type="hidden" name="index" value={c.index} />
+                        <button
+                          className="rounded-xl border border-neutral-700 px-3 py-2 text-xs hover:bg-emerald-50/10"
+                          title="Publish chapter"
+                        >
+                          Publish
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
 
@@ -400,6 +422,10 @@ export default async function BookPage({
           Управление доступом доступно только владельцу книги.
         </p>
       </section>
+
+      {/* ===== Realtime (SSE) — invisible subscriber for chapters list ============ */}
+      <ChaptersLiveClient slug={slug} />
+      {/* ===== End Realtime ====================================================== */}
     </div>
   );
 }
