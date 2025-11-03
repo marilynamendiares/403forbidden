@@ -1,9 +1,11 @@
 "use client";
+
 import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { usePathname, useSearchParams } from "next/navigation";
+import NotificationBell from "@/components/NotificationBell";
 
-export default function HeaderClient() {
+export default function HeaderClient({ sseEventName }: { sseEventName?: string }) {
   const { data } = useSession();
   const pathname = usePathname();
   const search = useSearchParams();
@@ -24,7 +26,7 @@ export default function HeaderClient() {
 
   return (
     <div className="flex items-center gap-4">
-      {/* Кнопка перехода на форум */}
+      {/* ссылка на форум */}
       <Link
         href="/forum"
         className="rounded bg-neutral-900 px-3 py-1 text-sm opacity-80 hover:opacity-100 transition"
@@ -32,7 +34,12 @@ export default function HeaderClient() {
         Forum
       </Link>
 
-      {/* Если авторизован — показываем email и выход */}
+      {/* колокольчик, если пользователь авторизован */}
+      {data?.user && sseEventName && (
+        <NotificationBell sseEventName={sseEventName} />
+      )}
+
+      {/* если авторизован — показываем email и выход */}
       {data?.user ? (
         <>
           <span className="text-sm opacity-70">{data.user.email}</span>

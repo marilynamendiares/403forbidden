@@ -4,26 +4,28 @@ import { headers, cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 
-async function getThreads(category: string) {
-  // В RSC безопаснее собрать origin из заголовков
+async function getThreads(category: string, cursor?: string) {
   const h = await headers();
   const origin =
     h.get("origin") ??
     `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
 
-  const res = await fetch(`${origin}/api/forum/categories/${category}/threads`, {
-    cache: "no-store",
-  });
-  if (!res.ok) return { items: [] as any[] };
-  return res.json();
+  const url = new URL(`${origin}/api/forum/categories/${category}/threads`);
+  if (cursor) url.searchParams.set("cursor", cursor);
+
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) return { items: [] as any[], nextCursor: null as string | null };
+  return res.json() as Promise<{ items: any[]; nextCursor: string | null }>;
 }
 
 export default async function CategoryPage({
   params,
+  searchParams,
 }: {
   params: { category: string };
+  searchParams: { cursor?: string };
 }) {
-  const data = await getThreads(params.category);
+  const { items, nextCursor } = await getThreads(params.category, searchParams.cursor);
 
   return (
     <div className="space-y-6">
@@ -35,7 +37,8 @@ export default async function CategoryPage({
       </div>
 
       <ul className="grid gap-3">
-        {data.items.map((t: any) => (
+        {items.length === 0 && <p className="opacity-60">No threads yet. Create the first one below.</p>}
+        {items.map((t) => (
           <li key={t.slug} className="border border-neutral-800 rounded-xl p-4">
             <Link
               className="text-lg font-medium hover:underline"
@@ -44,16 +47,22 @@ export default async function CategoryPage({
               {t.title}
             </Link>
             <p className="opacity-60 text-xs mt-1">
-              by{" "}
-              {t.author.profile?.displayName ??
-                t.author.profile?.username ??
-                "user"}{" "}
-              · {t._count.posts} posts
+              by {t.author.profile?.displayName ?? t.author.profile?.username ?? "user"} · {t._count.posts} posts
             </p>
           </li>
         ))}
-        {data.items.length === 0 && <p className="opacity-60">No threads yet.</p>}
       </ul>
+
+      {nextCursor && (
+        <div className="pt-2">
+          <Link
+            href={`/forum/${params.category}?cursor=${nextCursor}`}
+            className="rounded bg-neutral-900 px-3 py-2 text-sm hover:bg-neutral-800"
+          >
+            Load more
+          </Link>
+        </div>
+      )}
 
       <CreateThreadForm category={params.category} />
     </div>
@@ -67,7 +76,6 @@ function CreateThreadForm({ category }: { category: string }) {
     const title = String(formData.get("title") || "");
     const content = String(formData.get("content") || "");
 
-    // ОБЯЗАТЕЛЬНО: cookie + корректный origin
     const cookie = (await cookies()).toString();
     const h = await headers();
     const origin =
