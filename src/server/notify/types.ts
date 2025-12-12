@@ -4,6 +4,7 @@ export type NotificationType =
   | "collab.invite"
   | "chapter.published"
   | "chapter.updated"
+  | "chapter.new_post"
   | "comment.new"
   | "mention"
   | "thread.new_post"

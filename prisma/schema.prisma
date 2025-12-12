@@ -50,10 +50,13 @@ model User {
   accounts       Account[]
   sessions       Session[]
 
+  // username в User (будет @unique, NOT NULL — зажмём в SQL ниже)
+  username String @unique
+
   profile          Profile?
   roles            UserRole[]
   books            Book[]
-  pages            Page[] // ← backref for Page.owner
+  pages            Page[]
   threads          ForumThread[]
   posts            ForumPost[]
   comments         Comment[]
@@ -66,20 +69,21 @@ model User {
   turns            TurnQueue[] // ← backref for TurnQueue.user
   chaptersAuthored Chapter[]      @relation("ChapterAuthor")
   BookFollow       BookFollow[]
-
-  // NEW: посты внутри глав (обратная связь из ChapterPost.author)
-  chapterPosts ChapterPost[]
+  chapterPosts     ChapterPost[] // ← обратная связь из ChapterPost.author
 }
 
 model Profile {
-  id          String  @id @default(cuid())
-  userId      String  @unique
-  user        User    @relation(fields: [userId], references: [id])
-  username    String  @unique
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
   displayName String
   bio         String?
   avatarUrl   String?
   bannerUrl   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 // ---------- Pages ----------
@@ -144,6 +148,9 @@ model Chapter {
 
   // NEW: дата последнего поста (для сортировки/списков)
   lastPostAt DateTime?
+
+  // КАНОНИЧЕСКИЙ HTML тела интро
+  contentHtml String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

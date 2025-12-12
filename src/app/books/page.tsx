@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import BooksLiveClient from "@/components/BooksLiveClient";
+import CollapsibleSection from "@/components/CollapsibleSection";
 
 export const dynamic = "force-dynamic";
 
@@ -59,22 +60,24 @@ export default async function BooksPage() {
         ))}
       </ul>
 
-      <form action={create} className="border border-neutral-800 rounded-xl p-4 space-y-2">
-        <h2 className="text-lg font-medium">Create a book</h2>
-        <input
-          name="title"
-          placeholder="Title"
-          className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-          required
-        />
-        <input
-          name="tagline"
-          placeholder="Tagline (optional)"
-          className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-        />
-        <button className="rounded bg-white text-black px-4 py-2">Create</button>
-        <p className="opacity-60 text-xs">Requires sign-in.</p>
-      </form>
+<CollapsibleSection label="Create a book">
+  <form action={create} className="space-y-2">
+    {/* заголовок внутри уже не нужен, кнопка — это заголовок секции */}
+    <input
+      name="title"
+      placeholder="Title"
+      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+      required
+    />
+    <input
+      name="tagline"
+      placeholder="Tagline (optional)"
+      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+    />
+    <button className="rounded bg-white text-black px-4 py-2">Create</button>
+    <p className="opacity-60 text-xs">Requires sign-in.</p>
+  </form>
+</CollapsibleSection>
       <BooksLiveClient />
     </div>
   );

@@ -8,6 +8,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getRole } from "@/server/access";
 import { emit } from "@/server/events";
+import { sanitizeHtml } from "@/server/render/sanitizeHtml";
 
 type Ctx = { params: Promise<{ slug: string; index: string }> };
 
@@ -29,16 +30,18 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       index: true,
       title: true,
       markdown: true,
+      contentHtml: true,
       isDraft: true,
       publishedAt: true,
       updatedAt: true,
-      status: true, // ← NEW: вернуть статус главы
+      status: true,
       authorId: true,
       author: {
         select: {
           id: true,
           email: true,
-          profile: { select: { username: true, displayName: true } },
+          username: true,
+          profile: { select: { displayName: true } },
         },
       },
       book: { select: { id: true, slug: true, title: true, ownerId: true } },
@@ -48,7 +51,9 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
   if (!chapter) return new Response("Not found", { status: 404 });
 
   const session = await getServerSession(authOptions);
-  const me = (session as any)?.userId as string | undefined;
+  const me =
+    ((session as any)?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined);
 
   // Если это черновик — видит владелец или коллаборатор книги
   if (chapter.isDraft || !chapter.publishedAt) {
@@ -66,7 +71,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     }
   }
 
-  const canEdit = !!me && (me === chapter.book.ownerId || me === chapter.authorId);
+  const canEdit =
+    !!me && (me === chapter.book.ownerId || me === chapter.authorId);
 
   return Response.json({
     book: { title: chapter.book.title, slug: chapter.book.slug },
@@ -74,15 +80,16 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
       id: chapter.id,
       index: chapter.index,
       title: chapter.title,
-      markdown: chapter.markdown,
+      // canonical HTML: сначала contentHtml, потом legacy markdown
+      markdown: chapter.contentHtml ?? chapter.markdown ?? "",
       isDraft: chapter.isDraft,
       publishedAt: chapter.publishedAt,
       updatedAt: chapter.updatedAt,
-      status: chapter.status, // ← NEW
+      status: chapter.status,
     },
     author: {
       id: chapter.author?.id ?? null,
-      username: chapter.author?.profile?.username ?? null,
+      username: chapter.author?.username ?? null,
       displayName: chapter.author?.profile?.displayName ?? null,
       email: chapter.author?.email ?? null,
     },
@@ -103,7 +110,7 @@ const UpdateSchema = z.object({
   title: z.string().min(2).max(140).optional(),
   content: z.string().min(1).optional(),
   publish: z.boolean().optional(),
-  status: z.enum(["OPEN", "CLOSED"]).optional(), // ← NEW
+  status: z.enum(["OPEN", "CLOSED"]).optional(),
 });
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
@@ -117,13 +124,15 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     data.title === undefined &&
     data.content === undefined &&
     data.publish === undefined &&
-    data.status === undefined // ← NEW
+    data.status === undefined
   ) {
     return new Response("Nothing to update", { status: 400 });
   }
 
   const session = await getServerSession(authOptions);
-  const me = (session as any)?.userId as string | undefined;
+  const me =
+    ((session as any)?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined);
   if (!me) return new Response("Unauthorized", { status: 401 });
 
   const idx = Number(index);
@@ -176,12 +185,21 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     }
   }
 
+  // если меняем контент — санитизируем HTML перед записью
+  let safeContent: string | undefined = undefined;
+  if (wantsContent && typeof data.content === "string") {
+    safeContent = sanitizeHtml(data.content);
+  }
+
   const dataToApply: Record<string, unknown> = {
     ...(wantsTitle ? { title: data.title } : {}),
-    ...(wantsContent
+    ...(wantsContent && safeContent !== undefined
       ? {
-          markdown: data.content,
-          content: { type: "markdown", value: data.content },
+          // legacy
+          markdown: safeContent,
+          content: { type: "markdown", value: safeContent },
+          // canonical HTML
+          contentHtml: safeContent,
         }
       : {}),
     ...(wantsPublish && isOwner
@@ -190,7 +208,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
           publishedAt: data.publish ? new Date() : null,
         }
       : {}),
-    ...(wantsStatus ? { status: data.status } : {}), // ← NEW
+    ...(wantsStatus ? { status: data.status } : {}),
   };
 
   const updated = await prisma.chapter.update({
@@ -201,7 +219,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
       title: true,
       updatedAt: true,
       publishedAt: true,
-      status: true, // ← NEW
+      status: true,
     },
   });
 
@@ -248,7 +266,9 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { slug, index } = await params;
 
   const session = await getServerSession(authOptions);
-  const me = (session as any)?.userId as string | undefined;
+  const me =
+    ((session as any)?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined);
   if (!me) return new Response("Unauthorized", { status: 401 });
 
   const idx = Number(index);

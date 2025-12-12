@@ -1,11 +1,11 @@
-import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { z } from "zod";
-import { slugify } from "@/lib/slug";
+import { prisma } from "@/server/db";
+import { CreateCategory } from "@/server/schemas";
+import { getCategories } from "@/server/repos/forum";
 
 export async function GET() {
-  // ленивый сид категорий, если пусто
+  // lazy seed (как было), НЕ трогаем твою логику
   const count = await prisma.forumCategory.count();
   if (count === 0) {
     await prisma.forumCategory.createMany({
@@ -17,19 +17,9 @@ export async function GET() {
       skipDuplicates: true,
     });
   }
-
-  const categories = await prisma.forumCategory.findMany({
-    orderBy: { title: "asc" },
-    select: { id: true, slug: true, title: true, desc: true, _count: { select: { threads: true } } },
-  });
-
+  const categories = await getCategories();
   return Response.json(categories);
 }
-
-const CreateCategory = z.object({
-  title: z.string().trim().min(2).max(64),
-  desc: z.string().trim().max(300).optional(),
-});
 
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
@@ -40,16 +30,20 @@ export async function POST(req: Request) {
   const parsed = CreateCategory.safeParse(body);
   if (!parsed.success) return new Response("Bad Request", { status: 400 });
 
+  // создаём напрямую (репозитория тут не нужно, логика простая)
   const { title, desc } = parsed.data;
-  const slugBase = slugify(title);
-  // гарантируем уникальность в случае коллизии
-  let slug = slugBase || "category";
+  const base = (title || "category")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  let slug = base || "category";
+
   for (let i = 0; i < 3; i++) {
     try {
       const cat = await prisma.forumCategory.create({ data: { slug, title, desc } });
       return Response.json(cat, { status: 201 });
     } catch {
-      slug = `${slugBase}-${Math.random().toString(36).slice(2, 6)}`;
+      slug = `${base}-${Math.random().toString(36).slice(2, 6)}`;
     }
   }
   return new Response("Cannot create category", { status: 500 });

@@ -10,6 +10,9 @@ import { authOptions } from "@/server/auth";
 import ChaptersLiveClient from "@/components/ChaptersLiveClient"; // ← NEW: realtime списка глав
 import { getBookBySlug, getFollowStatus } from "@/server/follow";
 import { FollowBookButton } from "@/components/follow/FollowBookButton";
+import CollapsibleSection from "@/components/CollapsibleSection";
+import { BookActionsMenu } from "@/components/book/BookActionsMenu";
+
 
 // ===== Next.js runtime =========================================================
 export const dynamic = "force-dynamic";
@@ -22,17 +25,20 @@ type CollaboratorsPayload = {
   owner: {
     id: string;
     email: string | null;
-    profile: { username: string | null; displayName: string | null } | null;
+    username: string | null;
+    profile: { displayName: string | null; avatarUrl: string | null } | null;
   } | null;
   collaborators: Array<{
     user: {
       id: string;
       email: string | null;
-      profile: { username: string | null; displayName: string | null } | null;
+      username: string | null;
+      profile: { displayName: string | null; avatarUrl: string | null } | null;
     };
     role: "EDITOR" | "VIEWER";
   }>;
 } | null;
+
 
 // ===== Data loaders (SSR fetch with cookies) ===================================
 async function getBook(slug: string): Promise<BookChapters> {
@@ -186,50 +192,60 @@ const followInitial =
   return (
     <div className="space-y-6">
       {/* -- Breadcrumb ----------------------------------------------------------- */}
-      <a className="text-sm opacity-70 hover:underline" href="/books">
-        ← Back to books
-      </a>
+<Link className="text-sm opacity-70 hover:underline" href="/books">
+  ← Back to books
+</Link>
 
-      {/* -- Header + Delete book ------------------------------------------------ */}
+      {/* -- Header + Actions ---------------------------------------------------- */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-  <h1 className="text-2xl font-semibold">{book.title}</h1>
+        {/* Левая часть: заголовок + роль + created by */}
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-semibold">{book.title}</h1>
 
-  {/* FOLLOW button (скрываем, если не нашли мету книги) */}
-  {bookMeta && (
-    <FollowBookButton
-      slug={slug}
-      initialFollowed={followInitial.followed}
-      initialCount={followInitial.count}
-    />
-  )}
+            {(meRole === "OWNER" || meRole === "EDITOR") && (
+              <span
+                className={
+                  "rounded-full border px-2 py-0.5 text-xs " +
+                  (meRole === "OWNER"
+                    ? "border-amber-700 text-amber-400"
+                    : "border-blue-700 text-blue-400")
+                }
+                title={meRole === "OWNER" ? "You are the owner" : "You are an editor"}
+              >
+                {meRole.toLowerCase()}
+              </span>
+            )}
+          </div>
 
-  {(meRole === "OWNER" || meRole === "EDITOR") && (
-    <span
-      className={
-        "rounded-full border px-2 py-0.5 text-xs " +
-        (meRole === "OWNER"
-          ? "border-amber-700 text-amber-400"
-          : "border-blue-700 text-blue-400")
-      }
-      title={meRole === "OWNER" ? "You are the owner" : "You are an editor"}
-    >
-      {meRole.toLowerCase()}
-    </span>
-  )}
-</div>
+          {collabData?.owner && (
+            <p className="opacity-60 text-sm mt-1">
+              created by{" "}
+              <b>
+                @
+                {collabData.owner.username ??
+                  collabData.owner.email ??
+                  "owner"}
+              </b>
+            </p>
+          )}
+        </div>
 
+        {/* Правая часть — Follow bell + троеточие */}
+        <div className="flex items-center gap-2">
+          {bookMeta && (
+            <FollowBookButton
+              slug={slug}
+              initialFollowed={followInitial.followed}
+              initialCount={followInitial.count}
+            />
+          )}
 
-        {canEditBook && (
-          <form action={deleteBook}>
-            <button
-              className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-red-50/10 disabled:opacity-50"
-              title="Delete book"
-            >
-              Delete book
-            </button>
-          </form>
-        )}
+          <BookActionsMenu
+            canDelete={meRole === "OWNER"}   // только владелец видит пункт Delete
+            deleteAction={deleteBook}        // server action из файла
+          />
+        </div>
       </div>
 
       {/* -- Chapters list -------------------------------------------------------- */}
@@ -297,28 +313,36 @@ const followInitial =
         </ul>
       </section>
 
-      {/* -- Create chapter ------------------------------------------------------- */}
-      <form action={create} className="border border-neutral-800 rounded-xl p-4 space-y-2">
-        <h2 className="text-lg font-medium">Create chapter</h2>
-        <input
-          name="title"
-          placeholder="Title"
-          className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-          required
-        />
-        <textarea
-          name="content"
-          placeholder="Markdown content…"
-          className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-          rows={8}
-          required
-        />
-        <label className="flex items-center gap-2 text-sm opacity-80">
-          <input type="checkbox" name="publish" /> Publish immediately
-        </label>
-        <button className="rounded bg-white text-black px-4 py-2">Create</button>
-        <p className="opacity-60 text-xs">Requires sign-in.</p>
-      </form>
+      {/* -- Create chapter (only OWNER/EDITOR) ---------------------------------- */}
+      {canEditBook && (
+        <CollapsibleSection label="Create chapter">
+          <form action={create} className="space-y-2">
+            {/* заголовок больше не нужен — роль заголовка выполняет кнопка секции */}
+            <input
+              name="title"
+              placeholder="Title"
+              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+              required
+            />
+            <textarea
+              name="content"
+              placeholder="Markdown content…"
+              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+              rows={8}
+              required
+            />
+            <label className="flex items-center gap-2 text-sm opacity-80">
+              <input type="checkbox" name="publish" /> Publish immediately
+            </label>
+            <button className="rounded bg-white text-black px-4 py-2">
+              Create
+            </button>
+            <p className="opacity-60 text-xs">Requires sign-in.</p>
+          </form>
+        </CollapsibleSection>
+      )}
+
+
 
       {/* -- Collaboration -------------------------------------------------------- */}
       <section className="border border-neutral-800 rounded-xl p-4 space-y-3">
@@ -332,7 +356,7 @@ const followInitial =
               <li className="text-sm">
                 <span className="opacity-70">Owner:</span>{" "}
                 {collabData.owner?.profile?.displayName ??
-                  collabData.owner?.profile?.username ??
+                  collabData.owner?.username ??
                   collabData.owner?.email ??
                   "owner"}
               </li>
@@ -341,7 +365,7 @@ const followInitial =
                 <li key={c.user.id} className="text-sm flex items-center gap-2">
                   <span className="opacity-80">
                     {c.user.profile?.displayName ??
-                      c.user.profile?.username ??
+                      c.user.username ??
                       c.user.email}
                   </span>
                   <span className="px-2 py-0.5 text-xs rounded border border-neutral-700">

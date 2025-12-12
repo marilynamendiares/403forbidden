@@ -47,8 +47,9 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     select: {
       id: true,
       index: true,
+      title: true,
       bookId: true,
-      book: { select: { slug: true, ownerId: true } },
+      book: { select: { slug: true, ownerId: true, title: true } },
     },
   });
 
@@ -93,7 +94,9 @@ export async function POST(_req: NextRequest, { params }: Ctx) {
     payload: {
       bookId: updated.bookId,
       bookSlug: updated.book.slug,
+      bookTitle: updated.book.title,
       chapterIndex: updated.index,
+      chapterTitle: updated.title,
     },
   });
 

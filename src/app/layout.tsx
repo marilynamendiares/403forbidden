@@ -7,6 +7,7 @@ import HeaderClient from "./HeaderClient";
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
+import Link from "next/link";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -27,7 +28,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-black text-white`}>
         <Providers>
           <header className="max-w-5xl mx-auto p-4 flex justify-between items-center">
-            <div className="font-semibold">403forbidden</div>
+            <Link
+  href="/"
+  className="terminal-title text-xl font-semibold text-slate-100 hover:text-slate-50 transition-colors"
+>
+  403 Forbidden
+</Link>
             <HeaderClient sseEventName={sseEventName} />
           </header>
           <main className="max-w-5xl mx-auto p-4">{children}</main>

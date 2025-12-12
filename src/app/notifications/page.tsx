@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/server/db";
 import { MarkReadButton } from "@/components/MarkReadButton";
 import { MarkAllReadButton } from "@/components/MarkAllReadButton";
+import { ClearAllButton } from "@/components/ClearAllButton"; // ← НОВОЕ
 
 export default async function NotificationsPage() {
   const session = await getServerSession(authOptions);
@@ -30,7 +31,10 @@ export default async function NotificationsPage() {
     <div className="mx-auto max-w-2xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Notifications</h1>
-        <MarkAllReadButton />
+        <div className="flex items-center gap-2">
+          <MarkAllReadButton />
+          <ClearAllButton /> {/* ← НОВОЕ */}
+        </div>
       </div>
 
       {items.length === 0 && (
@@ -41,7 +45,7 @@ export default async function NotificationsPage() {
         {items.map((n) => (
           <li
             key={n.id}
-            className="border rounded-xl p-3 flex items-center justify-between"
+            className="flex items-center justify-between rounded-xl border p-3"
           >
             <div>
               <div className="font-medium">{n.type}</div>

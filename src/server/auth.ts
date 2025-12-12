@@ -11,7 +11,6 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
 
-  // наши кастомные страницы
   pages: {
     signIn: "/login",
     signOut: "/login",
@@ -33,13 +32,15 @@ export const authOptions: NextAuthOptions = {
         const parsed = schema.safeParse(creds);
         if (!parsed.success) return null;
 
+        // username теперь в User, а из Profile оставляем только витрину
         const user = await prisma.user.findUnique({
           where: { email: parsed.data.email },
           select: {
             id: true,
             email: true,
+            username: true, // ← ВАЖНО: username берём из User
             hashedPassword: true,
-            profile: { select: { displayName: true, username: true } },
+            profile: { select: { displayName: true, avatarUrl: true } },
           },
         });
         if (!user || !user.hashedPassword) return null;
@@ -47,46 +48,60 @@ export const authOptions: NextAuthOptions = {
         const ok = await bcrypt.compare(parsed.data.password, user.hashedPassword);
         if (!ok) return null;
 
+        // Прокидываем витринные поля; username положим в user (заберём в jwt)
         return {
           id: user.id,
           email: user.email,
-          name: user.profile?.displayName ?? user.profile?.username ?? null,
+          name: user.profile?.displayName ?? user.username ?? null,
+          image: user.profile?.avatarUrl ?? null,
+          // кастомные атрибуты (NextAuth не знает о них — поэтому any)
+          username: user.username as any,
         };
       },
     }),
   ],
 
   callbacks: {
-  async session({ session, token }) {
-    // гарантируем объект user
-    if (!session.user) session.user = {} as any;
+    async jwt({ token, user }) {
+      // При первом входе user присутствует — допишем данные в токен
+      if (user) {
+        token.uid = (user as any).id;
+        token.username = (user as any).username ?? null;
+        token.displayName = (user as any).name ?? null;
+        token.avatarUrl = (user as any).image ?? null;
+      }
+      return token;
+    },
 
-    // id пользователя берём из token.sub (JWT стратегия)
-    const uid = token?.sub ?? null;
+    async session({ session, token }) {
+      // гарантируем объект user
+      if (!session.user) session.user = {} as any;
 
-    if (uid) {
-      // новый «правильный» путь
-      (session.user as { id: string }).id = uid;
-      // обратная совместимость со ВСЕМ старым кодом
-      (session as any).userId = uid;
-    }
+      // id пользователя — из token.sub (или нашего uid)
+      const uid = (token?.sub as string | undefined) ?? (token?.uid as string | undefined) ?? null;
+      if (uid) {
+        (session.user as any).id = uid;
+        // обратная совместимость
+        (session as any).userId = uid;
+      }
 
-    return session;
+      // прокинем удобные поля в сессию
+      (session.user as any).username = (token as any).username ?? null;
+      session.user.name =
+        ((token as any).displayName as string | null) ?? session.user.name ?? null;
+      session.user.image = ((token as any).avatarUrl as string | null) ?? session.user.image ?? null;
+
+      return session;
+    },
+
+    async redirect({ url, baseUrl }) {
+      if (url.startsWith("/")) return `${baseUrl}${url}`;
+      try {
+        const u = new URL(url);
+        const b = new URL(baseUrl);
+        if (u.origin === b.origin) return url;
+      } catch {}
+      return baseUrl;
+    },
   },
-
-  async jwt({ token }) {
-    // ничего не меняем — token.sub уже содержит user.id
-    return token;
-  },
-
-  async redirect({ url, baseUrl }) {
-    if (url.startsWith("/")) return `${baseUrl}${url}`;
-    try {
-      const u = new URL(url);
-      const b = new URL(baseUrl);
-      if (u.origin === b.origin) return url;
-    } catch {}
-    return baseUrl;
-  },
-},
-}
+};

@@ -24,3 +24,206 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+.terminal-title {
+  position: relative;
+  display: inline-block;
+}
+
+.terminal-title::after {
+  content: "";
+  position: absolute;
+
+  left: calc(100% + 6px); /* небольшой отступ справа */
+  bottom: 3px;            /* опускаем полоску ближе к baseline */
+  
+  width: 14px;            /* короче */
+  height: 3px;            /* чуть толще */
+  background: #e5e5e5;
+
+  animation: caret-blink 3s steps(2, start) infinite;
+}
+
+@keyframes caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
+@layer base {
+  /* Общий контейнер тела поста (view + editor) */
+ /* .post-body intentionally has no base styles – elements below define layout */
+
+  /* Обычные абзацы */
+  .post-body p {
+    @apply my-2 text-[0.95rem] leading-relaxed;
+  }
+
+  /* Заголовки */
+  .post-body h2 {
+    @apply mt-6 mb-2 text-xl font-semibold tracking-tight;
+  }
+
+  .post-body h3 {
+    @apply mt-4 mb-2 text-lg font-semibold tracking-tight;
+  }
+
+  /* посты и интро: вернуть нормальное подчёркивание */
+  .post-body u {
+    text-decoration: underline;
+  }
+
+  /* Цитаты */
+  .post-body blockquote {
+    @apply my-3 border-l-2 border-neutral-700 pl-3 italic text-neutral-200;
+  }
+
+  /* Списки */
+  .post-body ul {
+    @apply my-3 ml-4 list-disc space-y-1 text-[0.95rem];
+  }
+
+  .post-body ol {
+    @apply my-3 ml-4 list-decimal space-y-1 text-[0.95rem];
+  }
+
+  .post-body li {
+    @apply leading-relaxed marker:text-neutral-400;
+  }
+
+  /* Блоки кода */
+  .post-body pre {
+    @apply my-3 overflow-x-auto rounded-lg bg-neutral-950/80 p-3 text-[0.8rem] font-mono;
+  }
+
+  /* Инлайн-код */
+  .post-body code {
+    @apply rounded bg-neutral-900/60 px-1 py-px font-mono text-[0.8rem];
+  }
+
+  .post-body pre code {
+    @apply bg-transparent p-0;
+  }
+
+  .post-body img {
+    @apply max-w-full h-auto rounded-lg my-3;
+    display: block;
+  }
+
+  .post-body a.mention {
+    @apply no-underline;
+  }
+
+  /* Подсветка выбранной картинки в редакторе */
+.post-body img.inline-image.ProseMirror-selectednode {
+  @apply ring-2 ring-neutral-400/60 rounded-md;
+}
+
+/* Чуть мягче, если хочешь ещё и фон */
+.post-body img.inline-image.ProseMirror-selectednode {
+  @apply ring-2 ring-neutral-400/60 rounded-md bg-neutral-900/40;
+}
+
+}
+
+@layer components {
+  /* ─────────────────────────────────────────────
+     Mention (@username) — edit + view режим
+     ───────────────────────────────────────────── */
+
+  a.mention-node,
+  span.mention-node,
+  a[data-type="mention"],
+  span[data-type="mention"] {
+    @apply text-sky-400 font-medium cursor-pointer
+      whitespace-nowrap align-baseline
+      no-underline hover:no-underline;
+      text-decoration: none !important;
+  }
+
+  /* Если хочешь отдельную тонкую настройку внутри поста */
+  .post-body a.mention-node,
+  .post-body span.mention-node,
+  .post-body a[data-type="mention"],
+  .post-body span[data-type="mention"] {
+    @apply align-baseline;
+  }
+
+  /* ─────────────────────────────────────────────
+     Popup со списком пользователей
+     ───────────────────────────────────────────── */
+
+  .mention-suggest {
+    @apply bg-neutral-950 text-neutral-200
+      border border-neutral-700 rounded-md shadow-lg
+      py-1 text-sm overflow-y-auto;
+    min-width: 160px;
+    max-height: 220px;
+    z-index: 9999;
+  }
+
+  .mention-item {
+    @apply px-3 py-1.5 cursor-pointer;
+  }
+
+  .mention-item.is-selected {
+    @apply bg-neutral-800 text-neutral-100;
+  }
+}
+
+.inline-image {
+  @apply max-w-full h-auto rounded-lg;
+  display: block;
+}
+
+/* выравнивание картинки по data-align */
+.inline-image[data-align="left"] {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.inline-image[data-align="center"] {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.inline-image[data-align="right"] {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+/* ─────────────────────────────────────────────
+   Вариант 1: текущая кнопка троеточия (книга)
+   ───────────────────────────────────────────── */
+.book-actions-menu-trigger {
+  @apply inline-flex h-8 w-8 items-center justify-center
+    rounded-md border border-neutral-700
+    bg-neutral-900/40 text-neutral-200
+    transition
+    focus:outline-none focus:ring-1 focus:ring-neutral-500
+    hover:bg-neutral-800 hover:text-white hover:border-neutral-500;
+}
+
+/* ─────────────────────────────────────────────
+   Вариант 2: glass / cyberpunk icon button
+   ───────────────────────────────────────────── */
+.ui-icon-button-glass {
+  @apply inline-flex h-8 w-8 items-center justify-center
+    rounded-md
+    border border-white/10
+    bg-white/5
+    text-sky-200/90
+    backdrop-blur-sm
+    transition;
+}
+
+.ui-icon-button-glass:hover {
+  @apply bg-white/10 border-white/20 text-sky-50;
+}
+
+.ui-icon-button-glass:active {
+  @apply scale-[0.97];
+}
+
+.ui-icon-button-glass:disabled {
+  @apply opacity-40 cursor-not-allowed;
+}

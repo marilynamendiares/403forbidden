@@ -9,13 +9,20 @@ export const runtime = "nodejs";
 // ——— helpers ———
 async function getMe() {
   const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
-  if (!userId) throw Object.assign(new Error("Unauthorized"), { status: 401 });
-  return userId;
+
+  const userId =
+    (session as any)?.user?.id ??
+    (session as any)?.userId ??
+    (session as any)?.user?.userId ??
+    null;
+
+  if (!userId) {
+    throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  }
+  return userId as string;
 }
 
 async function getBookBySlug(slug: string) {
-  // slug не глобально уникален → findFirst
   const book = await prisma.book.findFirst({
     where: { slug },
     select: { id: true, ownerId: true, title: true, slug: true },
@@ -32,6 +39,8 @@ async function ensureOwner(userId: string, bookId: string) {
   if (!owner) throw Object.assign(new Error("Forbidden"), { status: 403 });
 }
 
+// @username или просто слово → считаем «юзернеймом»;
+// всё остальное с @ внутри → email
 function normalizeIdentifier(identifier: string) {
   const idf = identifier.trim();
   if (idf.startsWith("@")) return { username: idf.slice(1) };
@@ -49,7 +58,6 @@ export async function GET(
     const { slug } = await ctx.params;
     const book = await getBookBySlug(slug);
 
-    // видеть могут владелец или любой коллаборатор на уровне книги (pageId=null)
     const canSee =
       book.ownerId === userId ||
       (await prisma.collaborator.findFirst({
@@ -63,7 +71,10 @@ export async function GET(
       select: {
         id: true,
         email: true,
-        profile: { select: { username: true, displayName: true } },
+        username: true, // ← ДОБАВИЛИ
+        profile: {
+          select: { displayName: true, avatarUrl: true },
+        },
       },
     });
 
@@ -71,22 +82,33 @@ export async function GET(
       where: { bookId: book.id, pageId: null },
       select: {
         id: true,
+        role: true,
         user: {
           select: {
             id: true,
             email: true,
-            profile: { select: { username: true, displayName: true } },
+            username: true, // ← ДОБАВИЛИ
+            profile: {
+              select: { displayName: true, avatarUrl: true },
+            },
           },
         },
-        role: true,
       },
       orderBy: { createdAt: "asc" },
     });
 
     return Response.json({
-      book: { id: book.id, slug: book.slug, title: book.title, ownerId: book.ownerId },
+      book: {
+        id: book.id,
+        slug: book.slug,
+        title: book.title,
+        ownerId: book.ownerId,
+      },
       owner,
-      collaborators: collaborators.map((c) => ({ user: c.user, role: c.role })),
+      collaborators: collaborators.map((c) => ({
+        user: c.user,
+        role: c.role,
+      })),
     });
   } catch (e: any) {
     const status = e?.status ?? 500;
@@ -96,7 +118,7 @@ export async function GET(
 
 // ——— POST: добавить/обновить коллаборатора ———
 const AddSchema = z.object({
-  identifier: z.string().trim().min(1), // email или @username
+  identifier: z.string().trim().min(1),
   role: z.enum(["EDITOR", "VIEWER"]).default("EDITOR"),
 });
 
@@ -113,10 +135,12 @@ export async function POST(
     if (!parsed.success) return new Response("Bad Request", { status: 400 });
 
     const book = await getBookBySlug(slug);
-    await ensureOwner(me, book.id); // управляет только владелец
+    await ensureOwner(me, book.id);
 
-    // Найдём пользователя по email или username
     const idf = normalizeIdentifier(parsed.data.identifier);
+
+    // 1) сначала ищем по email
+    // 2) если нет — ищем по username (поле User.username)
     const target =
       ("email" in idf
         ? await prisma.user.findUnique({
@@ -124,51 +148,49 @@ export async function POST(
             select: { id: true, email: true },
           })
         : null) ??
-      (await prisma.user.findFirst({
-        where: { profile: { username: ("username" in idf ? idf.username! : "") } },
+      (await prisma.user.findUnique({
+        where: {
+          username: "username" in idf ? idf.username! : "",
+        },
         select: { id: true, email: true },
       }));
 
     if (!target) return new Response("User not found", { status: 404 });
-    if (target.id === book.ownerId) return new Response("User is the owner", { status: 400 });
+    if (target.id === book.ownerId)
+      return new Response("User is the owner", { status: 400 });
 
-    // Проверим, есть ли уже запись на уровне книги (pageId=null)
     const existing = await prisma.collaborator.findFirst({
       where: { userId: target.id, bookId: book.id, pageId: null },
       select: { id: true },
     });
 
-    let result;
-    if (existing) {
-      result = await prisma.collaborator.update({
-        where: { id: existing.id },
-        data: { role: parsed.data.role },
+    const baseSelect = {
+      user: {
         select: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              profile: { select: { username: true, displayName: true } },
-            },
-          },
-          role: true,
+          id: true,
+          email: true,
+          username: true, // ← ДОБАВИЛИ
+          profile: { select: { displayName: true, avatarUrl: true } },
         },
-      });
-    } else {
-      result = await prisma.collaborator.create({
-        data: { userId: target.id, bookId: book.id, pageId: null, role: parsed.data.role },
-        select: {
-          user: {
-            select: {
-              id: true,
-              email: true,
-              profile: { select: { username: true, displayName: true } },
-            },
+      },
+      role: true,
+    } as const;
+
+    const result = existing
+      ? await prisma.collaborator.update({
+          where: { id: existing.id },
+          data: { role: parsed.data.role },
+          select: baseSelect,
+        })
+      : await prisma.collaborator.create({
+          data: {
+            userId: target.id,
+            bookId: book.id,
+            pageId: null,
+            role: parsed.data.role,
           },
-          role: true,
-        },
-      });
-    }
+          select: baseSelect,
+        });
 
     return Response.json(result, { status: existing ? 200 : 201 });
   } catch (e: any) {
@@ -197,7 +219,8 @@ export async function PATCH(
     const body = await req.json().catch(() => null);
     const parsed = PatchSchema.safeParse(body);
     if (!parsed.success) return new Response("Bad Request", { status: 400 });
-    if (parsed.data.userId === book.ownerId) return new Response("Cannot change owner", { status: 400 });
+    if (parsed.data.userId === book.ownerId)
+      return new Response("Cannot change owner", { status: 400 });
 
     const existing = await prisma.collaborator.findFirst({
       where: { userId: parsed.data.userId, bookId: book.id, pageId: null },
@@ -213,7 +236,8 @@ export async function PATCH(
           select: {
             id: true,
             email: true,
-            profile: { select: { username: true, displayName: true } },
+            username: true, // ← ДОБАВИЛИ
+            profile: { select: { displayName: true, avatarUrl: true } },
           },
         },
         role: true,
@@ -246,7 +270,8 @@ export async function DELETE(
     const body = await req.json().catch(() => null);
     const parsed = DeleteSchema.safeParse(body);
     if (!parsed.success) return new Response("Bad Request", { status: 400 });
-    if (parsed.data.userId === book.ownerId) return new Response("Cannot remove owner", { status: 400 });
+    if (parsed.data.userId === book.ownerId)
+      return new Response("Cannot remove owner", { status: 400 });
 
     const existing = await prisma.collaborator.findFirst({
       where: { userId: parsed.data.userId, bookId: book.id, pageId: null },

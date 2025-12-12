@@ -27,9 +27,18 @@ export default function ChapterLiveClient(props: { slug: string; index: string |
       log("deleted", e);
       if (String(e?.slug) === slug && String(e?.index) === index) router.refresh();
     },
+    "chapter:opened": (e) => {
+      log("opened", e);
+      if (String(e?.slug) === slug && String(e?.index) === index) router.refresh();
+    },
+    "chapter:closed": (e) => {
+      log("closed", e);
+      if (String(e?.slug) === slug && String(e?.index) === index) router.refresh();
+    },
     // опционально: ловим hello
     message: (e) => log("message", e),
   });
+
 
   return null;
 }

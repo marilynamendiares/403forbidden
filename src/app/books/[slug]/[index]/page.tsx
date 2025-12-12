@@ -1,25 +1,28 @@
 // src/app/books/[slug]/[index]/page.tsx
+import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import Markdown from "@/components/Markdown";
 import { timeAgo } from "@/lib/TimeAgo";
-import ChapterEditorClient from "@/components/ChapterEditorClient";
 import { redis, chapterLockKey } from "@/server/redis";
 import ChapterLiveClient from "@/components/ChapterLiveClient";
 import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { getRole } from "@/server/access"; // 🆕 для вычисления canPost
+import { getRole } from "@/server/access";
+import { ChapterIntroClient } from "@/components/chapter/ChapterIntroClient";
+import { ChapterActionsMenu } from "@/components/chapter/ChapterActionsMenu";
 
 // Поток постов и композер
 import { ChapterPostList } from "@/components/chapter/ChapterPostList";
 import { ChapterComposer } from "@/components/chapter/ChapterComposer";
+import { ChapterStatusBadge } from "@/components/ChapterStatusBadge";
+import { ChapterStatusToggleButton } from "@/components/ChapterStatusToggleButton";
 
 export const dynamic = "force-dynamic";
 
 type ChapRes = {
-  book: { id: string; slug: string; title: string; ownerId: string }; // 🆕 id + ownerId
+  book: { id: string; slug: string; title: string; ownerId: string };
   chapter: {
     id: string;
     index: number;
@@ -47,7 +50,10 @@ function toInt(v: string) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Читаем главу НАПРЯМУЮ через Prisma (без server fetch внутрь API)
 // ─────────────────────────────────────────────────────────────────────────────
-async function getChapterDirect(slug: string, index: number): Promise<ChapRes | null> {
+async function getChapterDirect(
+  slug: string,
+  index: number
+): Promise<ChapRes | null> {
   const session = await getServerSession(authOptions);
   const me =
     (session?.user?.id as string | undefined) ??
@@ -60,6 +66,7 @@ async function getChapterDirect(slug: string, index: number): Promise<ChapRes | 
       index: true,
       title: true,
       markdown: true,
+      contentHtml: true, // 🆕
       isDraft: true,
       publishedAt: true,
       updatedAt: true,
@@ -69,7 +76,8 @@ async function getChapterDirect(slug: string, index: number): Promise<ChapRes | 
         select: {
           id: true,
           email: true,
-          profile: { select: { username: true, displayName: true } },
+          username: true,
+          profile: { select: { displayName: true, avatarUrl: true } },
         },
       },
       book: { select: { id: true, slug: true, title: true, ownerId: true } },
@@ -104,7 +112,8 @@ async function getChapterDirect(slug: string, index: number): Promise<ChapRes | 
       id: row.id,
       index: row.index,
       title: row.title,
-      markdown: row.markdown,
+      // 🆕 canonical HTML: сначала contentHtml, затем markdown как fallback
+      markdown: (row as any).contentHtml ?? row.markdown ?? "",
       isDraft: row.isDraft,
       publishedAt: row.publishedAt ? row.publishedAt.toISOString() : null,
       updatedAt: row.updatedAt.toISOString(),
@@ -112,7 +121,7 @@ async function getChapterDirect(slug: string, index: number): Promise<ChapRes | 
     },
     author: {
       id: row.author?.id ?? null,
-      username: row.author?.profile?.username ?? null,
+      username: row.author?.username ?? null,
       displayName: row.author?.profile?.displayName ?? null,
       email: row.author?.email ?? null,
     },
@@ -131,9 +140,12 @@ export default async function ChapterPage({
   if (!idx) {
     return (
       <div className="space-y-6">
-        <a className="text-sm opacity-70 hover:underline" href={`/books/${slug}`}>
+        <Link
+          className="text-sm opacity-70 hover:underline"
+          href={`/books/${slug}`}
+        >
           ← Back to book
-        </a>
+        </Link>
         <h1 className="text-2xl font-semibold">Bad chapter index</h1>
       </div>
     );
@@ -143,7 +155,10 @@ export default async function ChapterPage({
   if (!data) {
     return (
       <div className="space-y-6">
-        <a className="text-sm opacity-70 hover:underline" href={`/books/${slug}`}>
+        <a
+          className="text-sm opacity-70 hover:underline"
+          href={`/books/${slug}`}
+        >
           ← Back to book
         </a>
         <h1 className="text-2xl font-semibold">Chapter not found</h1>
@@ -160,13 +175,33 @@ export default async function ChapterPage({
   const { book, chapter, author, canEdit } = data;
   const isClosed = (chapter.status ?? "OPEN") === "CLOSED";
 
-// 🧮 серверно вычисляем право постить (только OPEN и роли OWNER/EDITOR/AUTHOR)
-let canPost = false;
-if (me) {
-  const role = await getRole(me, book.id);
-  const isOwner = me === book.ownerId;
-  canPost = !isClosed && (isOwner || role === "EDITOR" || role === "AUTHOR");
-}
+  // 👉 Ищем следующую опубликованную главу этой же книги
+  const nextChapter = await prisma.chapter.findFirst({
+    where: {
+      bookId: book.id,
+      index: { gt: chapter.index },
+      isDraft: false,
+      publishedAt: { not: null },
+    },
+    orderBy: { index: "asc" },
+    select: { index: true },
+  });
+  const nextChapterIndex = nextChapter?.index ?? null;
+
+  // 🧮 права
+  let canPost = false;
+  let canToggle = false;
+
+  if (me) {
+    const role = await getRole(me, book.id);
+    const isOwner = me === book.ownerId;
+
+    // постить можно только в OPEN и с ролями OWNER/EDITOR/AUTHOR
+    canPost = !isClosed && (isOwner || role === "EDITOR" || role === "AUTHOR");
+
+    // право открывать/закрывать главу — OWNER/EDITOR
+    canToggle = isOwner || role === "EDITOR";
+  }
 
   // SSR: баннер блокировки
   const sLock = canEdit
@@ -181,12 +216,16 @@ if (me) {
     const cookie = (await cookies()).toString();
     const h = await headers();
     const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-    const res = await fetch(`${origin}/api/books/${slug}/${chapter.index}/publish`, {
-      method: "POST",
-      headers: { cookie },
-      cache: "no-store",
-    });
+      h.get("origin") ??
+      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+    const res = await fetch(
+      `${origin}/api/books/${slug}/${chapter.index}/publish`,
+      {
+        method: "POST",
+        headers: { cookie },
+        cache: "no-store",
+      }
+    );
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Failed to publish (${res.status}): ${txt}`);
@@ -200,7 +239,8 @@ if (me) {
     const cookie = (await cookies()).toString();
     const h = await headers();
     const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+      h.get("origin") ??
+      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
     const res = await fetch(`${origin}/api/books/${slug}/${chapter.index}`, {
       method: "DELETE",
       headers: { cookie },
@@ -222,10 +262,11 @@ if (me) {
 
     const h = await headers();
     const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+      h.get("origin") ??
+      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
     const cookie = (await cookies()).toString();
 
-    const res = await fetch(`${origin}/api/books/${slug}/${index}`, {
+    const res = await fetch(`${origin}/api/books/${slug}/${chapter.index}`, {
       method: "PATCH",
       headers: { "content-type": "application/json", cookie },
       body: JSON.stringify({ title, content }),
@@ -235,29 +276,28 @@ if (me) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Failed to update chapter (${res.status}): ${txt}`);
     }
-    revalidatePath(`/books/${slug}/${index}`);
+    revalidatePath(`/books/${slug}/${chapter.index}`);
   }
 
   return (
     <div className="space-y-6">
-      <a className="text-sm opacity-70 hover:underline" href={`/books/${book.slug}`}>
+      <Link
+        className="text-sm opacity-70 hover:underline"
+        href={`/books/${book.slug}`}
+      >
         ← Back to book
-      </a>
+      </Link>
 
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">
-            #{chapter.index} · {chapter.title} {chapter.isDraft ? "– Draft" : ""}
+            #{chapter.index} · {chapter.title}{" "}
+            {chapter.isDraft ? "– Draft" : ""}
           </h1>
 
           <p className="opacity-60 text-sm mt-1">
             {chapter.isDraft ? "draft" : "published"}
             {" · "}updated {timeAgo(chapter.updatedAt)}
-            {chapter.status && (
-              <>
-                {" · "}status: <b>{chapter.status}</b>
-              </>
-            )}
             {author && (
               <>
                 {" · "}
@@ -272,63 +312,57 @@ if (me) {
                 </span>
               </>
             )}
+            {" · "}status:{" "}
+            <ChapterStatusBadge
+              status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
+            />
           </p>
         </div>
 
-        <div className="flex gap-2">
-          {chapter.isDraft && (
-            <form action={publishThisChapter}>
-              <button
-                className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-emerald-50"
-                title="Publish chapter"
-              >
-                Publish
-              </button>
-            </form>
-          )}
-          {/* Delete доступен, если canEdit */}
-          {canEdit && (
-            <form action={deleteThisChapter}>
-              <button
-                className="rounded-xl border border-neutral-700 px-3 py-2 text-sm hover:bg-red-50"
-                title="Delete chapter"
-              >
-                Delete
-              </button>
-            </form>
-          )}
-        </div>
+        <ChapterActionsMenu
+          canToggle={canToggle}
+          canEdit={canEdit}
+          isDraft={chapter.isDraft}
+          bookSlug={book.slug}
+          chapterId={chapter.id}
+          status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
+          publishAction={publishThisChapter}
+          deleteAction={deleteThisChapter}
+        />
       </div>
 
-      {/* Баннер блокировки */}
-      {canEdit && sLock && (
+      {/* Баннер блокировки (пока простой, вернёмся к UX позже) */}
+      {canEdit && sLock && sLock.userId !== me && (
         <div className="rounded-lg border border-yellow-300/40 bg-yellow-50/10 p-3 text-sm">
           Сейчас редактирует <b>@{sLock.username ?? sLock.userId}</b>.
         </div>
       )}
 
-      {/* Тело главы */}
-      <Markdown>{chapter.markdown ?? ""}</Markdown>
-
-      {/* Редактор */}
-      {canEdit && (
-        <ChapterEditorClient
-          chapterId={chapter.id}
-          canEdit={canEdit}
-          defaultTitle={chapter.title}
-          defaultContent={chapter.markdown ?? ""}
-          onSave={save}
-        />
-      )}
+      {/* Интро главы + inline-редактор */}
+      <ChapterIntroClient
+        chapterId={chapter.id} // 🆕
+        canEdit={canEdit}
+        defaultTitle={chapter.title}
+        defaultContent={chapter.markdown ?? ""}
+        onSave={save}
+      />
 
       {/* Поток постов */}
-<div className="mt-8">
-  <h2 className="mb-2 text-lg font-semibold">Posts</h2>
-  {/* передаём currentUserId, чтобы показывать Edit/Delete только своим постам */}
-  <ChapterPostList slug={slug} index={chapter.index} currentUserId={me} />
-  {/* ВАЖНО: Composer должен бить по /api/books/[slug]/[index]/posts */}
-  <ChapterComposer slug={slug} index={chapter.index} disabled={!canPost} />
-</div>
+      <div className="mt-8">
+        <h2 className="mb-2 text-lg font-semibold">Posts</h2>
+        <ChapterPostList
+          slug={slug}
+          index={chapter.index}
+          currentUserId={me}
+          // 🆕 пробрасываем индекс следующей главы (или null)
+          nextChapterIndex={nextChapterIndex}
+        />
+        <ChapterComposer
+          slug={slug}
+          index={chapter.index}
+          disabled={!canPost}
+        />
+      </div>
 
       {/* SSE подписчик */}
       <ChapterLiveClient slug={slug} index={String(chapter.index)} />

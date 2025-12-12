@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mkdir -p docs/_facts
+
+FILES=$(git ls-files | wc -l | tr -d ' ')
+printf "%s\n" "$FILES" > docs/_facts/file_count.txt
+
+npx --yes tree-cli -l 4 -a -o docs/_facts/tree.txt || true
+
+jq -n --arg date "$(date -u +%F)" --arg files "$FILES" \
+  '{date: $date, files: ($files|tonumber)}' \
+  > docs/_facts/summary.json \
+  || echo "{\"date\":\"$(date -u +%F)\",\"files\":$FILES}" > docs/_facts/summary.json
+
+echo "✅ Snapshot complete → docs/_facts/"
+

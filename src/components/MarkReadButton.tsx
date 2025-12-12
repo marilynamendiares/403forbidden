@@ -1,34 +1,48 @@
+// src/components/MarkReadButton.tsx
 "use client";
 
-import { useTransition } from "react";
-import { useRouter } from "next/navigation";
-import { mutate as swrMutate } from "swr";
+import { useEffect, useState } from "react";
+import { notifyUnread } from "@/lib/notifyUnread";
 
 export function MarkReadButton({ id }: { id: string }) {
-  const [pending, start] = useTransition();
-  const router = useRouter();
+  const [loading, setLoading] = useState(false);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const onAll = () => setDone(true);
+    window.addEventListener("notifications:read_all", onAll);
+    return () => window.removeEventListener("notifications:read_all", onAll);
+  }, []);
+
+  const markOne = async () => {
+    if (loading || done) return;
+    setLoading(true);
+    try {
+      const res = await fetch("/api/notifications", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ op: "mark-one", id }),
+      });
+      if (res.ok) {
+        const { unread } = await res.json().catch(() => ({ unread: undefined }));
+        if (typeof unread === "number") notifyUnread({ op: "set", count: unread });
+        setDone(true); // скрываем кнопку сразу
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (done) return null;
 
   return (
     <button
-      disabled={pending}
-      onClick={() =>
-        start(async () => {
-          const r = await fetch("/api/notifications/mark-read", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ids: [id] }),
-          });
-          if (r.ok) {
-            // мгновенно обновим счётчик колокольчика
-            swrMutate("/api/notifications/count");
-            // и сам список
-            router.refresh();
-          }
-        })
-      }
-      className="text-sm px-2 py-1 rounded-lg border hover:bg-muted disabled:opacity-50"
+      onClick={markOne}
+      disabled={loading}
+      className="rounded border border-neutral-700 px-3 py-1.5 text-xs hover:bg-white/10 disabled:opacity-50"
+      title="Mark as read"
     >
-      {pending ? "Marking..." : "Mark read"}
+      {loading ? "Marking…" : "Mark read"}
     </button>
   );
 }

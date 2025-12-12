@@ -7,6 +7,7 @@ import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { emit } from "@/server/events";
+import { sanitizeHtml } from "@/server/render/sanitizeHtml";
 
 type Ctx = { params: Promise<{ slug: string; id: string }> };
 
@@ -31,7 +32,6 @@ function decodeCursor(token: string | null) {
 // ACL helper: может ли user постить в эту главу (OWNER/EDITOR/AUTHOR по книге)
 // ─────────────────────────────────────────────────────────────────────────────
 async function canPostInChapter(userId: string, chapterId: string) {
-  // находим bookId по главе
   const ch = await prisma.chapter.findUnique({
     where: { id: chapterId },
     select: { bookId: true, book: { select: { ownerId: true } } },
@@ -61,7 +61,6 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   const cursorToken = searchParams.get("cursor");
   const cursor = decodeCursor(cursorToken);
 
-  // подтвердим соответствие главы книге по slug
   const chapter = await prisma.chapter.findFirst({
     where: { id, book: { slug } },
     select: { id: true },
@@ -90,25 +89,40 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     select: {
       id: true,
       contentMd: true,
+      contentHtml: true, // 🆕 canonical HTML
       createdAt: true,
       editedAt: true,
       author: {
-        select: { id: true, profile: { select: { username: true, avatarUrl: true } } },
+        select: {
+          id: true,
+          email: true,
+          username: true,
+          profile: { select: { displayName: true, avatarUrl: true } },
+        },
       },
     },
   });
 
-  const items = rows.slice(0, limit).map((r) => ({
+
+const items = rows.slice(0, limit).map((r) => {
+  // 🆕 если в БД уже есть contentHtml — считаем его каноном,
+  // иначе используем старый contentMd как fallback
+  const bodyHtml = r.contentHtml ?? r.contentMd;
+
+  return {
     id: r.id,
-    contentMd: r.contentMd,
+    contentMd: bodyHtml, // наружу по-прежнему зовётся contentMd
     createdAt: r.createdAt,
     editedAt: r.editedAt,
     author: {
       id: r.author.id,
-      username: r.author.profile?.username ?? "user",
+      username: r.author.username ?? "user",
+      displayName: r.author.profile?.displayName ?? null,
       avatarUrl: r.author.profile?.avatarUrl ?? null,
     },
-  }));
+  };
+});
+
 
   const last = items[items.length - 1];
   const nextCursor =
@@ -135,12 +149,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     (session?.user?.id ?? (session as any)?.userId) as string | undefined;
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
+  // ↓↓↓ ВОТ ЗДЕСЬ НАЧИНАЕТСЯ НОВЫЙ БЛОК ↓↓↓
+
   const parse = CreatePostSchema.safeParse(await req.json().catch(() => null));
   if (!parse.success) {
     return Response.json({ error: "Bad Request" }, { status: 400 });
   }
 
-  // подтянем главу и проверим статус + принадлежность книге
   const chapter = await prisma.chapter.findFirst({
     where: { id, book: { slug } },
     select: { id: true, status: true },
@@ -150,24 +165,36 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return Response.json({ error: "Chapter is closed" }, { status: 423 });
   }
 
-  // ACL: OWNER/EDITOR/AUTHOR по книге
   if (!(await canPostInChapter(userId, chapter.id))) {
     return new Response("Forbidden", { status: 403 });
   }
+
+  // сырой HTML, который пришёл от редактора
+  const rawHtml = parse.data.contentMd;
+  // пропускаем через серверный sanitizer
+  const safeHtml = sanitizeHtml(rawHtml);
 
   const created = await prisma.$transaction(async (tx) => {
     const post = await tx.chapterPost.create({
       data: {
         chapterId: chapter.id,
         authorId: userId,
-        contentMd: parse.data.contentMd,
+        // храним оба варианта: сырой и санитизированный
+        contentMd: rawHtml,
+        contentHtml: safeHtml,
       },
       select: {
         id: true,
         contentMd: true,
+        contentHtml: true,
         createdAt: true,
         author: {
-          select: { id: true, profile: { select: { username: true, avatarUrl: true } } },
+          select: {
+            id: true,
+            email: true,
+            username: true,
+            profile: { select: { displayName: true, avatarUrl: true } },
+          },
         },
       },
     });
@@ -180,17 +207,18 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return post;
   });
 
-  // SSE event (минимальный payload)
+  // наружу (SSE) уже отдаём безопасный HTML
   await emit("chapter:new_post", {
     chapterId: chapter.id,
     post: {
       id: created.id,
-      contentMd: created.contentMd,
+      contentMd: created.contentHtml ?? created.contentMd,
       createdAt: created.createdAt.toISOString(),
     },
     author: {
       id: created.author.id,
-      username: created.author.profile?.username ?? "user",
+      username: created.author.username ?? "user",
+      displayName: created.author.profile?.displayName ?? null,
       avatarUrl: created.author.profile?.avatarUrl ?? null,
     },
   });

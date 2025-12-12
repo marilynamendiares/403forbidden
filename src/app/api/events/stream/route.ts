@@ -10,30 +10,53 @@ export async function GET(req: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       const send = (s: string) => controller.enqueue(encoder.encode(s));
-
       const id = crypto.randomUUID();
 
-      // клиент записывает СТРОКИ вида "event: x\ndata: {...}\n\n"
+      // держим ссылку, чтобы корректно чистить keepalive
+      let ka: ReturnType<typeof setInterval> | null = null;
+
+      const onAbort = () => {
+        if (ka) {
+          clearInterval(ka);
+          ka = null;
+        }
+        removeClient(id);
+        try {
+          controller.close();
+        } catch {}
+        // снимаем слушатель, чтобы исключить утечки
+        req.signal.removeEventListener("abort", onAbort);
+      };
+
+      // рекомендуемый интервал автопереподключения клиенту (мс)
+      send(`retry: 5000\n`);
+
+      // регистрируем клиента — сервер будет писать уже готовые SSE-строки:
+      // "event: <name>\n" + "data: <json>\n\n"
       addClient({
         id,
         write: (chunk: string) => send(chunk),
         close: () => {
-          try { controller.close(); } catch {}
+          try {
+            controller.close();
+          } catch {}
+          req.signal.removeEventListener("abort", onAbort);
         },
       });
 
-      // стартовое сообщение, чтобы сразу увидеть активность
-      send(`event: hello\ndata: ${JSON.stringify({ ok: true, clients: clientCount() })}\n\n`);
+      // стартовое сообщение, полезно для мониторинга
+      send(
+        `event: hello\ndata: ${JSON.stringify({
+          ok: true,
+          clients: clientCount(),
+          ts: Date.now(),
+        })}\n\n`,
+      );
 
-      // keepalive-комментарии каждые 15с
-      const ka = setInterval(() => send(`: keepalive ${Date.now()}\n\n`), 15_000);
+      // keepalive-комментарии — помогают прокси не закрывать поток
+      ka = setInterval(() => send(`: keepalive ${Date.now()}\n\n`), 15_000);
 
-      // отписка/cleanup при разрыве соединения
-      const onAbort = () => {
-        clearInterval(ka);
-        removeClient(id);
-        try { controller.close(); } catch {}
-      };
+      // корректный cleanup при разрыве соединения
       req.signal.addEventListener("abort", onAbort);
     },
   });

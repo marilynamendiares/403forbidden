@@ -1,22 +1,73 @@
+// src/app/forum/page.tsx
 import Link from "next/link";
+import { headers } from "next/headers";
 
-type Cat = { slug: string; title: string; desc: string | null; _count: { threads: number } };
+export const dynamic = "force-dynamic"; // не кешируем
+export const revalidate = 0;
 
-export const dynamic = "force-dynamic";
+type Category = {
+  id: string;
+  slug: string;
+  title: string;
+  desc: string | null;
+  _count: { threads: number };
+};
 
-export default async function ForumHome() {
-  const res = await fetch(`${process.env.NEXTAUTH_URL ?? ""}/api/forum/categories`, { cache: "no-store" });
-  const cats: Cat[] = await res.json();
+async function getCategories(): Promise<Category[]> {
+  const h = await headers();
+  const origin =
+    h.get("origin") ??
+    `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
+  const url = new URL(`${origin}/api/forum/categories`);
+
+  try {
+    const r = await fetch(url, { cache: "no-store" });
+    if (!r.ok) return [];
+    // API возвращает МАССИВ категорий
+    const data = (await r.json()) as Category[] | any;
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
+export default async function ForumIndexPage() {
+  const items = await getCategories();
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Forum</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">Forum</h1>
+        <a className="text-sm opacity-70 hover:underline" href="/forum">
+          All categories
+        </a>
+      </div>
+
       <ul className="grid gap-3">
-        {cats.map((c) => (
-          <li key={c.slug} className="border border-neutral-800 rounded-xl p-4">
-            <Link className="text-lg font-medium hover:underline" href={`/forum/${c.slug}`}>{c.title}</Link>
-            {c.desc && <p className="opacity-70 text-sm mt-1">{c.desc}</p>}
-            <p className="opacity-60 text-xs mt-2">{c._count.threads} threads</p>
+        {items.length === 0 && (
+          <p className="opacity-60">No categories yet.</p>
+        )}
+
+        {items.map((c) => (
+          <li
+            key={c.slug}
+            className="border border-neutral-800 rounded-xl p-4 flex items-center justify-between"
+          >
+            <div>
+              <Link
+                href={`/forum/${c.slug}`}
+                className="font-medium hover:underline"
+              >
+                {c.title}
+              </Link>
+              {c.desc && (
+                <p className="text-xs opacity-70 mt-1">{c.desc}</p>
+              )}
+            </div>
+            <span className="text-xs opacity-60">
+              {c._count.threads} threads
+            </span>
           </li>
         ))}
       </ul>

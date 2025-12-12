@@ -1,0 +1,208 @@
+.
+├── README.md
+├── docs
+│   └── ENV.example
+├── eslint.config.mjs
+├── next-env.d.ts
+├── next.config.ts
+├── package.json
+├── pnpm-lock.yaml
+├── postcss.config.mjs
+├── prisma
+│   ├── migrations
+│   │   ├── 20251021112034_init
+│   │   │   └── migration.sql
+│   │   ├── 20251021113815_nextauth_relations
+│   │   │   └── migration.sql
+│   │   ├── 20251023123003_forumthread_locked
+│   │   │   └── migration.sql
+│   │   ├── 20251024171008_chapter_add_author_nullable
+│   │   │   └── migration.sql
+│   │   ├── 20251029103625_notifications_refactor
+│   │   │   └── migration.sql
+│   │   ├── 20251030100022_add_book_follow
+│   │   │   └── migration.sql
+│   │   ├── 20251103082750_sprint_1_6_chapter_posts_and_status
+│   │   │   └── migration.sql
+│   │   ├── 20251106092310_profile_move_username_and_timestamps
+│   │   │   └── migration.sql
+│   │   ├── 20251106101035_
+│   │   │   └── migration.sql
+│   │   └── migration_lock.toml
+│   ├── schema.prisma
+│   └── src
+│       └── generated
+│           └── prisma
+│               ├── client.d.ts
+│               ├── client.js
+│               ├── default.d.ts
+│               ├── default.js
+│               ├── edge.d.ts
+│               ├── edge.js
+│               ├── index-browser.js
+│               ├── index.d.ts
+│               ├── index.js
+│               ├── libquery_engine-darwin-arm64.dylib.node
+│               ├── package.json
+│               ├── query_engine_bg.js
+│               ├── query_engine_bg.wasm
+│               ├── runtime
+│               ├── schema.prisma
+│               ├── wasm-edge-light-loader.mjs
+│               ├── wasm-worker-loader.mjs
+│               ├── wasm.d.ts
+│               └── wasm.js
+├── project_structure.txt
+├── public
+│   ├── default-avatar.svg
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── vercel.svg
+│   └── window.svg
+├── src
+│   ├── app
+│   │   ├── HeaderClient.tsx
+│   │   ├── api
+│   │   │   ├── admin
+│   │   │   │   └── outbox
+│   │   │   ├── auth
+│   │   │   │   ├── [...nextauth]
+│   │   │   │   └── session
+│   │   │   ├── books
+│   │   │   │   ├── [slug]
+│   │   │   │   └── route.ts
+│   │   │   ├── debug
+│   │   │   │   └── session
+│   │   │   ├── events
+│   │   │   │   └── stream
+│   │   │   ├── forum
+│   │   │   │   ├── categories
+│   │   │   │   └── posts
+│   │   │   ├── lock
+│   │   │   │   └── route.ts
+│   │   │   ├── notifications
+│   │   │   │   ├── count
+│   │   │   │   ├── mark-read
+│   │   │   │   └── route.ts
+│   │   │   ├── profile
+│   │   │   │   ├── [username]
+│   │   │   │   └── route.ts
+│   │   │   ├── signup
+│   │   │   │   └── route.ts
+│   │   │   └── upload
+│   │   │       └── avatar
+│   │   ├── books
+│   │   │   ├── [slug]
+│   │   │   │   ├── [index]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── favicon.ico
+│   │   ├── forum
+│   │   │   ├── [category]
+│   │   │   │   ├── [slug]
+│   │   │   │   └── page.tsx
+│   │   │   └── page.tsx
+│   │   ├── globals.css
+│   │   ├── layout.tsx
+│   │   ├── login
+│   │   │   └── page.tsx
+│   │   ├── me
+│   │   │   └── page.tsx
+│   │   ├── notifications
+│   │   │   └── page.tsx
+│   │   ├── page.tsx
+│   │   ├── profile
+│   │   │   ├── ProfileForm.tsx
+│   │   │   └── page.tsx
+│   │   ├── providers.tsx
+│   │   ├── settings
+│   │   │   └── profile
+│   │   │       └── page.tsx
+│   │   ├── signup
+│   │   │   └── page.tsx
+│   │   └── u
+│   │       └── [username]
+│   │           └── page.tsx
+│   ├── components
+│   │   ├── BooksLiveClient.tsx
+│   │   ├── ChapterEditorClient.tsx
+│   │   ├── ChapterLiveClient.tsx
+│   │   ├── ChaptersLiveClient.tsx
+│   │   ├── MarkAllReadButton.tsx
+│   │   ├── MarkReadButton.tsx
+│   │   ├── Markdown.tsx
+│   │   ├── NotificationBell.tsx
+│   │   ├── ReplyFormClient.tsx
+│   │   ├── ThreadLiveClient.tsx
+│   │   ├── UserBadge.tsx
+│   │   ├── chapter
+│   │   │   ├── ChapterComposer.tsx
+│   │   │   ├── ChapterPostItem.tsx
+│   │   │   └── ChapterPostList.tsx
+│   │   └── follow
+│   │       └── FollowBookButton.tsx
+│   ├── generated
+│   │   └── prisma
+│   │       ├── client.d.ts
+│   │       ├── client.js
+│   │       ├── default.d.ts
+│   │       ├── default.js
+│   │       ├── edge.d.ts
+│   │       ├── edge.js
+│   │       ├── index-browser.js
+│   │       ├── index.d.ts
+│   │       ├── index.js
+│   │       ├── libquery_engine-darwin-arm64.dylib.node
+│   │       ├── package.json
+│   │       ├── query_engine_bg.js
+│   │       ├── query_engine_bg.wasm
+│   │       ├── runtime
+│   │       │   ├── edge-esm.js
+│   │       │   ├── edge.js
+│   │       │   ├── index-browser.d.ts
+│   │       │   ├── index-browser.js
+│   │       │   ├── library.d.ts
+│   │       │   ├── library.js
+│   │       │   ├── react-native.js
+│   │       │   ├── wasm-compiler-edge.js
+│   │       │   └── wasm-engine-edge.js
+│   │       ├── schema.prisma
+│   │       ├── wasm-edge-light-loader.mjs
+│   │       ├── wasm-worker-loader.mjs
+│   │       ├── wasm.d.ts
+│   │       └── wasm.js
+│   ├── hooks
+│   │   └── useEventStream.ts
+│   ├── lib
+│   │   ├── TimeAgo.ts
+│   │   ├── format.ts
+│   │   ├── realtime
+│   │   └── slug.ts
+│   ├── middleware.ts
+│   ├── server
+│   │   ├── access.ts
+│   │   ├── auth.ts
+│   │   ├── db.ts
+│   │   ├── dto.ts
+│   │   ├── events.ts
+│   │   ├── follow.ts
+│   │   ├── fragments.ts
+│   │   ├── notify
+│   │   │   ├── emit.ts
+│   │   │   ├── publish.ts
+│   │   │   ├── queue.ts
+│   │   │   ├── recipients.ts
+│   │   │   └── types.ts
+│   │   ├── r2.ts
+│   │   ├── redis.ts
+│   │   └── repos
+│   │       ├── chapters.ts
+│   │       └── forum.ts
+│   └── types
+│       └── next-auth.d.ts
+├── tree.txt
+├── tsconfig.json
+└── tsconfig.tsbuildinfo
+
+72 directories, 134 files

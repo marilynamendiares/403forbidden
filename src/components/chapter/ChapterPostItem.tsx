@@ -1,9 +1,12 @@
 // src/components/chapter/ChapterPostItem.tsx
 "use client";
 
-import { useState, KeyboardEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import Markdown from "@/components/Markdown";
+import { RichPostEditor } from "@/components/editor/RichPostEditor";
+import { RichPostViewer } from "@/components/editor/RichPostViewer";
+
 
 export function ChapterPostItem(props: {
   post: {
@@ -31,8 +34,157 @@ export function ChapterPostItem(props: {
   const [text, setText] = useState(post.contentMd);
   const [busy, setBusy] = useState(false);
 
-  const canSave = !busy && text.trim().length > 0 && text !== post.contentMd;
+  // baseline = то, что пришло с сервера (последняя сохранённая версия поста)
+  const baseline = useMemo(() => post.contentMd, [post.contentMd]);
 
+  // простой флаг HTML vs markdown (как и раньше)
+  const isHtml = baseline.trim().startsWith("<");
+
+  // локальный драфт в localStorage — отдельный ключ под каждый пост
+  const draftKey = useMemo(
+    () => (post.id ? `chapter_post_draft:${post.id}` : ""),
+    [post.id]
+  );
+
+  const dirty = text !== baseline;
+
+  // статус локального драфта
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+
+  const canSave = !busy && text.trim().length > 0 && dirty;
+
+  // ─────────────────────────────────────────────────────────────
+  // 1) При входе в режим редактирования — пытаемся подхватить локальный драфт
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!editing || !draftKey) return;
+
+    try {
+      const raw = localStorage.getItem(draftKey);
+      if (!raw) {
+        setDraftRestored(false);
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as { content?: string } | null;
+      if (!parsed || typeof parsed.content !== "string") {
+        setDraftRestored(false);
+        return;
+      }
+
+      const draft = parsed.content;
+      const draftEmpty = draft.trim().length === 0;
+      const baselineEmpty = baseline.trim().length === 0;
+
+      // есть ли смысл в драфте?
+      let hasMeaningful = false;
+      if (!baselineEmpty) {
+        hasMeaningful = !draftEmpty; // если уже есть текст на сервере — нужен непустой черновик
+      } else {
+        hasMeaningful = !draftEmpty; // новый пост — любой непустой драфт имеет смысл
+      }
+
+      const differsFromBaseline = draft !== baseline;
+
+      if (!hasMeaningful || !differsFromBaseline) {
+        // драфт бессмысленный — очищаем
+        localStorage.removeItem(draftKey);
+        setDraftRestored(false);
+        return;
+      }
+
+      // подхватываем драфт в редактор
+      setText(draft);
+      setDraftRestored(true);
+      setSaveState("saved");
+      setLastSavedAt(null);
+    } catch {
+      setDraftRestored(false);
+    }
+  }, [editing, draftKey, baseline]);
+
+  // ─────────────────────────────────────────────────────────────
+  // 2) Автосохранение локального драфта (только в режиме редактирования)
+  // ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!editing || !draftKey) return;
+
+    if (!dirty) {
+      // нет отличий от baseline — очищаем локальный драфт
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {}
+      setSaveState("idle");
+      setLastSavedAt(null);
+      return;
+    }
+
+    setSaveState("saving");
+
+    const timeout = window.setTimeout(() => {
+      try {
+        const content = text;
+        const draftEmpty = content.trim().length === 0;
+        const baselineEmpty = baseline.trim().length === 0;
+
+        let hasMeaningful = false;
+        if (!baselineEmpty) {
+          hasMeaningful = !draftEmpty;
+        } else {
+          hasMeaningful = !draftEmpty;
+        }
+
+        const differsFromBaseline = content !== baseline;
+
+        if (!hasMeaningful || !differsFromBaseline) {
+          localStorage.removeItem(draftKey);
+          setSaveState("idle");
+          setLastSavedAt(null);
+          return;
+        }
+
+        localStorage.setItem(draftKey, JSON.stringify({ content }));
+        setSaveState("saved");
+        setLastSavedAt(Date.now());
+      } catch {
+        // ignore
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timeout);
+  }, [editing, text, dirty, draftKey, baseline]);
+
+  // ─────────────────────────────────────────────────────────────
+  // 3) Статус локального драфта (подпись под кнопками)
+  // ─────────────────────────────────────────────────────────────
+  let statusLabel = "No local changes";
+  if (saveState === "saving") {
+    statusLabel = "Saving draft…";
+  } else if (saveState === "saved" && lastSavedAt) {
+    const sec = Math.round((Date.now() - lastSavedAt) / 1000);
+    if (sec <= 2) statusLabel = "Draft saved just now";
+    else statusLabel = `Draft saved ${sec}s ago`;
+  } else if (dirty) {
+    statusLabel = "Unsaved changes";
+  }
+
+  // сброс локального драфта
+  function discardLocalDraft() {
+    if (!draftKey) return;
+    try {
+      localStorage.removeItem(draftKey);
+    } catch {}
+    setText(baseline);
+    setDraftRestored(false);
+    setSaveState("idle");
+    setLastSavedAt(null);
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // 4) Сохранение / удаление на сервер
+  // ─────────────────────────────────────────────────────────────
   async function saveEdit() {
     if (!slug || !index) return;
     if (!canSave) return;
@@ -55,6 +207,16 @@ export function ChapterPostItem(props: {
 
     const json = await res.json().catch(() => null);
     onAfterChange?.("updated", post.id, json?.post ?? { contentMd: text });
+
+    // успешный save → baseline на сервере обновится; локальный драфт больше не нужен
+    if (draftKey) {
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {}
+    }
+    setDraftRestored(false);
+    setSaveState("idle");
+    setLastSavedAt(null);
     setEditing(false);
   }
 
@@ -76,27 +238,53 @@ export function ChapterPostItem(props: {
       return;
     }
 
+    // на удаление тоже чистим локальный драфт
+    if (draftKey) {
+      try {
+        localStorage.removeItem(draftKey);
+      } catch {}
+    }
+
     onAfterChange?.("deleted", post.id);
   }
 
-  function onTextKey(e: KeyboardEvent<HTMLTextAreaElement>) {
-    const isCmdEnter = (e.metaKey || e.ctrlKey) && e.key === "Enter";
-    if (isCmdEnter) {
-      e.preventDefault();
-      void saveEdit();
-    }
+  // отмена редактирования: закрываем редактор, but НЕ трогаем локальный драфт,
+  // чтобы при следующем заходе можно было восстановиться
+  function cancelEdit() {
+    setEditing(false);
+    setText(baseline);
   }
 
-  return (
-    <article className="flex gap-3 py-3 border-b border-border/50">
-      <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
-        {author.avatarUrl ? (
-          <Image alt="" src={author.avatarUrl} width={32} height={32} />
-        ) : null}
-      </div>
+  // если с сервера пришло новое содержимое и мы НЕ в режиме редактирования —
+  // подхватываем его в локальный state
+  useEffect(() => {
+    if (!editing) {
+      setText(baseline);
+      setDraftRestored(false);
+      setSaveState("idle");
+      setLastSavedAt(null);
+    }
+  }, [baseline, editing]);
 
-      <div className="min-w-0 flex-1">
-        <div className="text-sm text-muted-foreground mb-1">
+// src/components/chapter/ChapterPostItem.tsx
+// ... всё сверху БЕЗ изменений ...
+
+  // простой флаг HTML vs markdown нам больше не нужен
+  // const isHtml = baseline.trim().startsWith("<");
+
+// ... всё до return оставляем как есть ...
+
+  return (
+    <article className="py-3 border-b border-border/50">
+      {/* ШАПКА: аватарка + мета в одну строку */}
+      <div className="flex items-center gap-3">
+        <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
+          {author.avatarUrl ? (
+            <Image alt="" src={author.avatarUrl} width={32} height={32} />
+          ) : null}
+        </div>
+
+        <div className="text-sm text-muted-foreground">
           posted by <span className="font-medium">@{author.username}</span>
           {" • "}
           <time dateTime={dt.toISOString()} title={display}>
@@ -104,21 +292,41 @@ export function ChapterPostItem(props: {
           </time>
           {post.editedAt && <span className="ml-1 opacity-60">(edited)</span>}
         </div>
+      </div>
 
+      {/* ТЕЛО ПОСТА + РЕДАКТОР: на всю ширину контейнера */}
+      <div className="mt-2 min-w-0">
         {!editing ? (
-          <div className="prose prose-invert max-w-none whitespace-pre-wrap">
-            <Markdown>{post.contentMd}</Markdown>
+          // ★ VIEW MODE: ВСЕГДА считаем, что в contentMd уже HTML из TipTap
+          <div className="post-body prose prose-invert max-w-none">
+            <div
+              dangerouslySetInnerHTML={{
+                __html: baseline,
+              }}
+            />
           </div>
         ) : (
-          <textarea
-            className="w-full rounded-md border border-neutral-700 bg-transparent p-2 text-sm"
-            rows={4}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={onTextKey}
-            disabled={busy}
-            placeholder="Edit your post…"
-          />
+          // EDIT MODE: RichPostEditor, как был
+          <div className="post-body prose prose-invert max-w-none">
+            <RichPostEditor value={text} onChange={setText} disabled={busy} />
+
+            {/* статус локального драфта */}
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-neutral-500">
+              <span>{statusLabel}</span>
+              {draftRestored && (
+                <>
+                  <span className="text-amber-300">· Local draft restored</span>
+                  <button
+                    type="button"
+                    onClick={discardLocalDraft}
+                    className="rounded-full border border-amber-500/60 px-2 py-px text-[11px] text-amber-100 hover:bg-amber-500/10"
+                  >
+                    Discard draft
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
         )}
 
         {isMine && (
@@ -145,15 +353,11 @@ export function ChapterPostItem(props: {
                   onClick={saveEdit}
                   disabled={!canSave}
                   className="hover:text-foreground disabled:opacity-50"
-                  title="Cmd/Ctrl+Enter"
                 >
                   Save
                 </button>
                 <button
-                  onClick={() => {
-                    setEditing(false);
-                    setText(post.contentMd);
-                  }}
+                  onClick={cancelEdit}
                   disabled={busy}
                   className="hover:text-foreground disabled:opacity-50"
                 >

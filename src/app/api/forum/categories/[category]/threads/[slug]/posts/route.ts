@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
-import { emit } from "@/server/events"; // ⬅️ добавили
+import { emit } from "@/server/events";
 
 type Ctx = { params: Promise<{ category: string; slug: string }> };
 
@@ -35,7 +35,13 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       author: {
         select: {
           id: true,
-          profile: { select: { username: true, displayName: true } },
+          username: true, // ← username лежит в User
+          profile: {
+            select: {
+              displayName: true,
+              avatarUrl: true,
+            },
+          },
         },
       },
     },
@@ -80,17 +86,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       content: { type: "markdown", value: content },
       markdown: content,
     },
-    select: { id: true, threadId: true, createdAt: true }, // ⬅️ добавили threadId
+    select: { id: true, threadId: true, createdAt: true },
   });
 
-  // ⬅️ эмит realtime-события о новом посте
   emit("thread:new_post", {
-  threadId: post.threadId,
-  category,
-  slug,
-  postId: post.id,
-  at: Date.now(),
-});
+    threadId: post.threadId,
+    category,
+    slug,
+    postId: post.id,
+    at: Date.now(),
+  });
 
   return Response.json(post, { status: 201 });
 }

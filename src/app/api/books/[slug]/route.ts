@@ -2,46 +2,74 @@
 import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import { requireRole } from "@/server/access";
-import type { NextRequest } from "next/server";
-import { emit } from "@/server/events"; // 🆕 добавили
 
-type Ctx = { params: Promise<{ slug: string }> };
+export const runtime = "nodejs";
 
-// DELETE /api/books/[slug]
-export async function DELETE(_req: NextRequest, { params }: Ctx) {
-  const { slug } = await params;
-
+// ───────────────── helpers ─────────────────
+async function getMe() {
   const session = await getServerSession(authOptions);
   const userId = (session as any)?.userId as string | undefined;
-  if (!userId) return new Response("Unauthorized", { status: 401 });
+  if (!userId) {
+    throw Object.assign(new Error("Unauthorized"), { status: 401 });
+  }
+  return userId;
+}
 
-  // disambiguation по @@unique([ownerId, slug]):
-  // находим книгу, к которой у пользователя есть отношение (владелец/коллаборатор)
+async function getBookBySlug(slug: string) {
   const book = await prisma.book.findFirst({
-    where: {
-      slug,
-      OR: [
-        { ownerId: userId },
-        { collaborators: { some: { userId, pageId: null } } },
-      ],
-    },
-    select: { id: true, slug: true }, // 🆕 нужен slug для эмита
-  });
-  if (!book) return new Response("Not found", { status: 404 });
-
-  // Удалять могут OWNER и EDITOR
-  await requireRole(userId, book.id, "EDITOR");
-
-  await prisma.$transaction(async (tx) => {
-    await tx.chapter.deleteMany({ where: { bookId: book.id } });
-    await tx.collaborator.deleteMany({ where: { bookId: book.id } });
-    await tx.book.delete({ where: { id: book.id } });
+    where: { slug },
+    select: { id: true, ownerId: true, title: true, slug: true },
   });
 
-  // 🟢 SSE: уведомим список книг
-  emit("book:deleted", { id: book.id, slug: book.slug, at: Date.now() });
+  if (!book) {
+    throw Object.assign(new Error("Not found"), { status: 404 });
+  }
+  return book;
+}
 
-  // 204 — классический ответ на успешный DELETE
-  return new Response(null, { status: 204 });
+// ───────────────── DELETE /api/books/[slug] ─────────────────
+export async function DELETE(
+  _req: Request,
+  ctx: { params: Promise<{ slug: string }> }
+) {
+  try {
+    const me = await getMe();
+    const { slug } = await ctx.params;
+    const book = await getBookBySlug(slug);
+
+    // Только владелец может удалять книгу
+    if (book.ownerId !== me) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    // Удаляем все связанное с книгой в одной транзакции
+    await prisma.$transaction(async (tx) => {
+      // коллабораторы
+      await tx.collaborator.deleteMany({
+        where: { bookId: book.id },
+      });
+
+      // фолловеры книги (если у тебя есть такая модель — поправь имя при необходимости)
+      await (tx as any).bookFollow?.deleteMany?.({
+        where: { bookId: book.id },
+      });
+
+      // главы (если есть CASCADE на дочерние сущности, этого достаточно)
+      await tx.chapter.deleteMany({
+        where: { bookId: book.id },
+      });
+
+      // сама книга
+      await tx.book.delete({
+        where: { id: book.id },
+      });
+    });
+
+    return new Response(null, { status: 204 });
+  } catch (e: any) {
+    const status = e?.status ?? 500;
+    const msg = e?.message || "Internal error";
+    console.error("Failed to delete book", e);
+    return new Response(msg, { status });
+  }
 }

@@ -1,9 +1,10 @@
 // src/components/chapter/ChapterPostList.tsx
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChapterPostItem } from "./ChapterPostItem";
-import { useEventStream } from "@/hooks/useEventStream"; // ← проверь путь, если другой — поправь
+import { useEventStream } from "@/hooks/useEventStream";
 
 type Author = {
   id: string;
@@ -23,9 +24,16 @@ type Props = {
   slug: string;
   index: number | string;
   currentUserId?: string | null;
+  /** null / undefined → показываем END; число → ссылка на следующую главу */
+  nextChapterIndex?: number | null;
 };
 
-export function ChapterPostList({ slug, index, currentUserId }: Props) {
+export function ChapterPostList({
+  slug,
+  index,
+  currentUserId,
+  nextChapterIndex,
+}: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -77,19 +85,6 @@ export function ChapterPostList({ slug, index, currentUserId }: Props) {
     void fetchPage();
   }, [fetchPage]);
 
-  // бесконечный скролл
-  useEffect(() => {
-    const el = rootRef.current;
-    if (!el) return;
-    const onScroll = () => {
-      if (!cursor || loading || reachedEnd) return;
-      const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (dist < 300) void fetchPage();
-    };
-    el.addEventListener("scroll", onScroll);
-    return () => el.removeEventListener("scroll", onScroll);
-  }, [cursor, loading, reachedEnd, fetchPage]);
-
   // локальные апдейты после edit/delete (из дочернего элемента)
   function handleAfterChange(
     kind: "updated" | "deleted",
@@ -114,6 +109,11 @@ export function ChapterPostList({ slug, index, currentUserId }: Props) {
     "chapter:new_post": (e: any) => {
       // ожидаем payload вида: { slug, index, post: { id, contentMd, createdAt, author{...} } }
       if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.post) return;
+
+      const el = rootRef.current;
+      const shouldStick =
+        !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 200;
+
       const it: Item = {
         id: e.post.id,
         contentMd: e.post.contentMd,
@@ -121,23 +121,35 @@ export function ChapterPostList({ slug, index, currentUserId }: Props) {
         editedAt: null,
         author: e.post.author,
       };
-      setItems((prev) => (prev.some((p) => p.id === it.id) ? prev : [...prev, it]));
+
+      setItems((prev) => {
+        if (prev.some((p) => p.id === it.id)) return prev;
+        return [...prev, it];
+      });
+
+      if (shouldStick && el) {
+        setTimeout(() => {
+          if (!rootRef.current) return;
+          rootRef.current.scrollTop = rootRef.current.scrollHeight;
+        }, 0);
+      }
     },
+
     "chapter:post_updated": (e: any) => {
-  if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.postId) return;
-  setItems((prev) => {
-    const i = prev.findIndex((p) => p.id === e.postId);
-    if (i === -1) return prev;
-    const cp = prev.slice();
-    cp[i] = {
-      ...cp[i],
-      // если пришёл новый текст — обновим его
-      ...(typeof e.contentMd === "string" ? { contentMd: e.contentMd } : {}),
-      editedAt: e.editedAt ?? new Date().toISOString(),
-    };
-    return cp;
-  });
-},
+      if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.postId) return;
+      setItems((prev) => {
+        const i = prev.findIndex((p) => p.id === e.postId);
+        if (i === -1) return prev;
+        const cp = prev.slice();
+        cp[i] = {
+          ...cp[i],
+          ...(typeof e.contentMd === "string" ? { contentMd: e.contentMd } : {}),
+          editedAt: e.editedAt ?? new Date().toISOString(),
+        };
+        return cp;
+      });
+    },
+
     "chapter:post_deleted": (e: any) => {
       // payload: { slug, index, postId }
       if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.postId) return;
@@ -145,27 +157,65 @@ export function ChapterPostList({ slug, index, currentUserId }: Props) {
     },
   });
 
-  return (
-    <div ref={rootRef} className="max-h-[70vh] overflow-y-auto pr-2">
-      {items.map((it) => (
-        <ChapterPostItem
-          key={it.id}
-          post={it}
-          author={it.author}
-          currentUserId={currentUserId ?? null}
-          slug={slug}
-          index={index}
-          onAfterChange={handleAfterChange}
-        />
-      ))}
+return (
+  <div ref={rootRef} className="space-y-4">
 
-      {loading && (
-        <div className="py-4 text-center text-muted-foreground">Loading…</div>
-      )}
+{items.map((it) => (
+  <div
+    key={it.id}
+    id={`post-${it.id}`} // ← якорь, чтобы работали ссылки ...#post-<id>
+  >
+    <ChapterPostItem
+      post={it}
+      author={it.author}
+      currentUserId={currentUserId ?? null}
+      slug={slug}
+      index={index}
+      onAfterChange={handleAfterChange}
+    />
+  </div>
+))}
 
-      {!loading && reachedEnd && (
-        <div className="py-4 text-center text-muted-foreground">End</div>
-      )}
-    </div>
-  );
+
+    {loading && (
+      <div className="py-4 text-center text-muted-foreground">Loading…</div>
+    )}
+
+    {/* Load more */}
+    {!loading && !reachedEnd && (
+      <div className="py-4 text-center">
+        <button
+          type="button"
+          onClick={() => void fetchPage()}
+          className="text-sm underline hover:no-underline"
+        >
+          Load more
+        </button>
+      </div>
+    )}
+
+{/* ────────────────────────────────────────────────
+    END / NEXT CHAPTER BUTTON
+   ──────────────────────────────────────────────── */}
+{!loading && reachedEnd && (
+  <div className="pt-6 flex justify-end">
+    {nextChapterIndex ? (
+      <a
+        href={`/books/${slug}/${nextChapterIndex}`}
+        className="inline-flex items-center gap-2 rounded-md border border-white/30 
+                   px-4 py-2 text-sm text-white hover:bg-white hover:text-black 
+                   transition"
+      >
+        Next chapter →
+      </a>
+    ) : (
+      <div className="text-sm opacity-50 select-none">
+        End
+      </div>
+    )}
+  </div>
+)}
+  </div>
+);
+
 }

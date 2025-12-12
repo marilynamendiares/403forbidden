@@ -1,7 +1,6 @@
 // src/app/forum/[category]/[slug]/page.tsx
 import Link from "next/link";
 import { headers, cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { revalidatePath } from "next/cache";
@@ -9,6 +8,7 @@ import ReplyFormClient from "@/components/ReplyFormClient";
 import Markdown from "@/components/Markdown";
 import { timeAgo } from "@/lib/TimeAgo";
 import ThreadLiveClient from "@/components/ThreadLiveClient";
+import UserBadge from "@/components/UserBadge";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +18,9 @@ async function getThread(category: string, slug: string, cursor?: string) {
     h.get("origin") ??
     `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
 
-  const url = new URL(`${origin}/api/forum/categories/${category}/threads/${slug}/posts`);
+  const url = new URL(
+    `${origin}/api/forum/categories/${category}/threads/${slug}/posts`
+  );
   if (cursor) url.searchParams.set("cursor", cursor);
 
   const postsRes = await fetch(url, { cache: "no-store" });
@@ -39,7 +41,6 @@ export default async function ThreadPage({
   const session = await getServerSession(authOptions);
   const me = (session as any)?.userId as string | undefined;
 
-  // ✅ извлекаем один раз и используем дальше только эти переменные
   const category = String(params.category);
   const slug = String(params.slug);
 
@@ -68,11 +69,9 @@ export default async function ThreadPage({
       throw new Error(`Failed to delete (${res.status}): ${text}`);
     }
 
-    // ✅ используем category/slug
     revalidatePath(`/forum/${category}/${slug}`);
   }
 
-  // server action для отправки ответа
   async function send(formData: FormData) {
     "use server";
 
@@ -98,7 +97,6 @@ export default async function ThreadPage({
       throw new Error(`Failed to reply (${res.status}): ${text}`);
     }
 
-    // ✅ используем category/slug
     revalidatePath(`/forum/${category}/${slug}`);
   }
 
@@ -107,7 +105,7 @@ export default async function ThreadPage({
       <div>
         <a
           className="text-sm opacity-70 hover:underline"
-          href={`/forum/${category}`} // ✅
+          href={`/forum/${category}`}
         >
           ← Back
         </a>
@@ -117,15 +115,18 @@ export default async function ThreadPage({
       <ul className="grid gap-3">
         {posts.map((p: any) => (
           <li key={p.id} className="border border-neutral-800 rounded-xl p-4">
-            <p className="opacity-60 text-xs mb-2">
-              {p.author?.profile?.displayName ??
-                p.author?.profile?.username ??
-                "user"}
-            </p>
+            <div className="flex items-center justify-between mb-2">
+              <UserBadge
+                href={`/u/${encodeURIComponent(p.author?.username ?? "user")}`}
+                avatar={p.author?.profile?.avatarUrl ?? null}
+                username={p.author?.username ?? "user"}
+                displayName={p.author?.profile?.displayName ?? null}
+                size={24}
+              />
+              <time className="text-xs opacity-60">{timeAgo(p.createdAt)}</time>
+            </div>
 
             <Markdown>{p.markdown ?? ""}</Markdown>
-
-            <p className="opacity-50 text-xs mt-2">{timeAgo(p.createdAt)}</p>
 
             {me && me === p.authorId && (
               <form action={removePost.bind(null, p.id)} className="pt-2">
@@ -145,7 +146,7 @@ export default async function ThreadPage({
       {nextCursor && (
         <div className="pt-2">
           <Link
-            href={`/forum/${category}/${slug}?cursor=${nextCursor}`} // ✅
+            href={`/forum/${category}/${slug}?cursor=${nextCursor}`}
             className="rounded bg-neutral-900 px-3 py-2 text-sm hover:bg-neutral-800"
           >
             Load more posts
@@ -154,9 +155,7 @@ export default async function ThreadPage({
       )}
 
       <ReplyFormClient action={send} />
-
-      {/* 🔴 Невидимый SSE-подписчик — обновляет ленту постов в реальном времени */}
-      <ThreadLiveClient category={category} slug={slug} /> {/* ✅ */}
+      <ThreadLiveClient category={category} slug={slug} />
     </div>
   );
 }

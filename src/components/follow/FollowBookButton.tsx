@@ -1,47 +1,78 @@
+// src/components/follow/FollowBookButton.tsx
 "use client";
-import { useState, useTransition } from "react";
 
-export function FollowBookButton({
-  slug,
-  initialFollowed,
-  initialCount,
-}: {
+import { useState } from "react";
+import { Bell, BellRing } from "lucide-react";
+
+type Props = {
   slug: string;
   initialFollowed: boolean;
   initialCount: number;
-}) {
-  const [pending, startTransition] = useTransition();
+};
+
+export function FollowBookButton({ slug, initialFollowed, initialCount }: Props) {
   const [followed, setFollowed] = useState(initialFollowed);
   const [count, setCount] = useState(initialCount);
+  const [isPending, setIsPending] = useState(false);
 
-  async function mutate(nextFollowed: boolean) {
-    const method = nextFollowed ? "POST" : "DELETE";
-    const res = await fetch(`/api/books/${slug}/follow`, { method, cache: "no-store" });
-    if (!res.ok) return; // TODO: показать toast об ошибке
-    const data = (await res.json()) as { followed: boolean; count: number };
-    setFollowed(data.followed);
-    setCount(data.count);
+  async function handleToggle() {
+    if (isPending) return;
+    setIsPending(true);
+
+    try {
+      const res = await fetch(`/api/books/${slug}/follow`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        console.error("Failed to toggle follow", res.status);
+        return;
+      }
+
+      const json = (await res.json().catch(() => null)) as
+        | { followed?: boolean; count?: number }
+        | null;
+
+      if (json && typeof json.followed === "boolean") {
+        setFollowed(json.followed);
+      }
+      if (json && typeof json.count === "number") {
+        setCount(json.count);
+      }
+    } catch (e) {
+      console.error("Toggle follow error:", e);
+    } finally {
+      setIsPending(false);
+    }
   }
 
-  const onClick = () => {
-    startTransition(() => mutate(!followed));
-    // Оптимистичное обновление
-    setFollowed(!followed);
-    setCount((c) => c + (followed ? -1 : 1));
-  };
+  const isActive = followed;
 
   return (
     <button
-      disabled={pending}
-      onClick={onClick}
-      className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 border ${
-        followed ? "bg-emerald-600 text-white" : "bg-transparent"
-      }`}
-      aria-pressed={followed}
-      title={followed ? "Unfollow" : "Follow"}
+      type="button"
+      onClick={handleToggle}
+      disabled={isPending}
+      className={
+        "inline-flex items-center gap-1 text-xs disabled:opacity-50 " +
+        (isActive ? "text-emerald-300" : "text-neutral-400")
+      }
+      title={isActive ? "Unfollow book" : "Follow book"}
     >
-      {followed ? "Following" : "Follow"}
-      <span className="text-xs opacity-80">{count}</span>
+      <span
+        className={
+          "inline-flex h-6 w-6 items-center justify-center " +
+          (isActive ? "text-emerald-400" : "text-neutral-500")
+        }
+      >
+        {isActive ? <BellRing className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+      </span>
+
+      <span className={isActive ? "tabular-nums text-emerald-300" : "tabular-nums"}>
+        {count}
+      </span>
     </button>
   );
 }

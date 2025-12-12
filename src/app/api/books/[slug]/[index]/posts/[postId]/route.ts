@@ -7,6 +7,7 @@ import { authOptions } from "@/server/auth";
 import { prisma } from "@/server/db";
 import { z } from "zod";
 import { emit } from "@/server/events";
+import { sanitizeHtml } from "@/server/render/sanitizeHtml";
 
 type Ctx = { params: Promise<{ slug: string; index: string; postId: string }> };
 
@@ -22,7 +23,11 @@ function toIdx(v: string) {
 async function getChapterBySlugIndex(slug: string, index: number) {
   return prisma.chapter.findFirst({
     where: { book: { slug }, index },
-    select: { id: true, bookId: true, book: { select: { ownerId: true } } },
+    select: {
+      id: true,
+      bookId: true,
+      book: { select: { ownerId: true } },
+    },
   });
 }
 
@@ -60,28 +65,48 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   const isAuthor = me === post.authorId;
   if (!isOwner && !isAuthor) return new Response("Forbidden", { status: 403 });
 
+  const editedAt = new Date();
+
+  // 🆕 сырой HTML от клиента
+  const rawHtml = parsed.data.contentMd;
+  // 🆕 санитизируем его на сервере
+  const safeHtml = sanitizeHtml(rawHtml);
+
   const updated = await prisma.chapterPost.update({
     where: { id: post.id },
-    data: { contentMd: parsed.data.contentMd, editedAt: new Date() },
+    data: {
+      contentMd: rawHtml,
+      contentHtml: safeHtml,
+      editedAt,
+    },
     select: {
       id: true,
       contentMd: true,
+      contentHtml: true,
       editedAt: true,
     },
   });
 
-  // 🔴 теперь передаём slug и index — для фильтрации на клиенте
-  await emit("chapter:post_updated", {
+  // 🔴 SSE: наружу отдаём уже безопасный HTML
+  emit("chapter:post_updated", {
     slug,
     index: idx,
     chapterId: chapter.id,
     postId: updated.id,
-    contentMd: updated.contentMd,
+    contentMd: updated.contentHtml ?? updated.contentMd,
     editedAt: updated.editedAt?.toISOString() ?? null,
+    at: Date.now(),
   });
 
-  return Response.json({ ok: true, post: updated }, { status: 200 });
+  // и в ответе API тоже сразу возвращаем безопасный вариант в contentMd
+  const safePost = {
+    ...updated,
+    contentMd: updated.contentHtml ?? updated.contentMd,
+  };
+
+  return Response.json({ ok: true, post: safePost }, { status: 200 });
 }
+
 
 // DELETE: удалить свой пост (или OWNER книги)
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
@@ -120,11 +145,12 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   });
 
   // 🔴 и здесь — тоже slug и index
-  await emit("chapter:post_deleted", {
+  emit("chapter:post_deleted", {
     slug,
     index: idx,
     chapterId: chapter.id,
     postId,
+    at: Date.now(),
   });
 
   return Response.json({ ok: true }, { status: 200 });

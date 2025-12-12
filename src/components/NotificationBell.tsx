@@ -7,9 +7,12 @@ import { useEffect } from "react";
 const fetcher = (u: string) => fetch(u).then(r => r.json());
 
 export default function NotificationBell(props: { sseEventName?: string; className?: string }) {
-  const { data, mutate } = useSWR<{ count: number }>("/api/notifications/count", fetcher, {
-    refreshInterval: 20000,
-  });
+const { data, mutate } = useSWR<{ count: number }>(
+  "/api/notifications?unread=1",
+  fetcher,
+  { refreshInterval: 20000 }
+);
+
 
   // SSE: как только придёт событие notify:user:<id> — обновляем счётчик
   useEventStream(
