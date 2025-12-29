@@ -331,13 +331,6 @@ export default async function ChapterPage({
         />
       </div>
 
-      {/* Баннер блокировки (пока простой, вернёмся к UX позже) */}
-      {canEdit && sLock && sLock.userId !== me && (
-        <div className="rounded-lg border border-yellow-300/40 bg-yellow-50/10 p-3 text-sm">
-          Сейчас редактирует <b>@{sLock.username ?? sLock.userId}</b>.
-        </div>
-      )}
-
       {/* Интро главы + inline-редактор */}
       <ChapterIntroClient
         chapterId={chapter.id} // 🆕

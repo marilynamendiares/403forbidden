@@ -24,10 +24,12 @@ export default function SignupPage() {
 
     setLoading(false);
 
+    const data = await res.json().catch(() => ({}));
+
     if (res.ok) {
-      router.push("/login");
+      // после успешной регистрации — ведём подтверждать email
+      router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     } else {
-      const data = await res.json().catch(() => ({}));
       setError(data.error || "Registration failed");
     }
   }

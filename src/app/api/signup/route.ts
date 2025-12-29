@@ -1,6 +1,21 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 import { prisma } from "@/server/db";
+
+function gen6() {
+  return String(Math.floor(100000 + Math.random() * 900000)); // 6 digits
+}
+
+function sha256(s: string) {
+  return crypto.createHash("sha256").update(s).digest("hex");
+}
+
+// TODO: подключим реальную отправку (Resend/SMTP). Пока заглушка.
+async function sendEmailVerificationCode(email: string, code: string) {
+  console.log("[DEV] email verify code to", email, ":", code);
+}
+
 
 export async function POST(req: Request) {
   try {
@@ -18,15 +33,32 @@ export async function POST(req: Request) {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    await prisma.user.create({
-      data: {
-        email,
-        hashedPassword,
-        profile: {
-          create: { username, displayName: username },
+    const code = gen6();
+    const codeHash = sha256(code);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 min
+
+    await prisma.$transaction(async (tx) => {
+      await tx.user.create({
+        data: {
+          email,
+          username, // у тебя username в User обязательный
+          hashedPassword,
+          emailVerifiedAt: null,
+          profile: { create: { displayName: username } },
         },
-      },
+      });
+
+      await tx.authCode.upsert({
+        where: { email_purpose: { email, purpose: "EMAIL_VERIFY" } },
+        update: { codeHash, expiresAt, tries: 0, createdAt: new Date() },
+        create: { email, purpose: "EMAIL_VERIFY", codeHash, expiresAt },
+      });
     });
+
+    await sendEmailVerificationCode(email, code);
+
+    return NextResponse.json({ success: true, needsEmailVerify: true });
+
 
     return NextResponse.json({ success: true });
   } catch (err: any) {

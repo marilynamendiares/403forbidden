@@ -1,201 +1,183 @@
-├── .gitignore
-├── docs
-│   └── ENV.example
-├── eslint.config.mjs
-├── next.config.ts
-├── package.json
-├── pnpm-lock.yaml
-├── postcss.config.mjs
-├── prisma
-│   ├── migrations
-│   │   ├── 20251021112034_init
-│   │   │   └── migration.sql
-│   │   ├── 20251021113815_nextauth_relations
-│   │   │   └── migration.sql
-│   │   ├── 20251023123003_forumthread_locked
-│   │   │   └── migration.sql
-│   │   ├── 20251024171008_chapter_add_author_nullable
-│   │   │   └── migration.sql
-│   │   ├── 20251029103625_notifications_refactor
-│   │   │   └── migration.sql
-│   │   ├── 20251030100022_add_book_follow
-│   │   │   └── migration.sql
-│   │   ├── 20251103082750_sprint_1_6_chapter_posts_and_status
-│   │   │   └── migration.sql
-│   │   └── migration_lock.toml
-│   ├── schema.prisma
-│   └── src
-│       └── generated
-│           └── prisma
-│               ├── client.d.ts
-│               ├── client.js
-│               ├── default.d.ts
-│               ├── default.js
-│               ├── edge.d.ts
-│               ├── edge.js
-│               ├── index-browser.js
-│               ├── index.d.ts
-│               ├── index.js
-│               ├── libquery_engine-darwin-arm64.dylib.node
-│               ├── package.json
-│               ├── query_engine_bg.js
-│               ├── query_engine_bg.wasm
-│               ├── runtime
-│               │   ├── edge-esm.js
-│               │   ├── edge.js
-│               │   ├── index-browser.d.ts
-│               │   ├── index-browser.js
-│               │   ├── library.d.ts
-│               │   ├── library.js
-│               │   ├── react-native.js
-│               │   ├── wasm-compiler-edge.js
-│               │   └── wasm-engine-edge.js
-│               ├── schema.prisma
-│               ├── wasm-edge-light-loader.mjs
-│               ├── wasm-worker-loader.mjs
-│               ├── wasm.d.ts
-│               └── wasm.js
-├── public
-│   ├── file.svg
-│   ├── globe.svg
-│   ├── next.svg
-│   ├── vercel.svg
-│   └── window.svg
-├── README.md
-├── src
-│   ├── app
-│   │   ├── api
-│   │   │   ├── admin
-│   │   │   │   └── outbox
-│   │   │   │       └── drain
-│   │   │   │           └── route.ts
-│   │   │   ├── auth
-│   │   │   │   └── [...nextauth]
-│   │   │   │       └── route.ts
-│   │   │   ├── books
-│   │   │   │   ├── [slug]
-│   │   │   │   │   ├── [index]
-│   │   │   │   │   │   ├── posts
-│   │   │   │   │   │   │   ├── [postId]
-│   │   │   │   │   │   │   │   └── route.ts
-│   │   │   │   │   │   │   └── route.ts
-│   │   │   │   │   │   ├── publish
-│   │   │   │   │   │   │   └── route.ts
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   ├── chapters
-│   │   │   │   │   │   ├── [id]
-│   │   │   │   │   │   │   ├── posts
-│   │   │   │   │   │   │   │   └── route.ts
-│   │   │   │   │   │   │   └── route.ts
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   ├── collaborators
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   ├── follow
-│   │   │   │   │   │   └── route.ts
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── route.ts
-│   │   │   ├── debug
-│   │   │   │   └── session
-│   │   │   │       └── route.ts
-│   │   │   ├── events
-│   │   │   │   └── stream
-│   │   │   │       └── route.ts
-│   │   │   ├── forum
-│   │   │   │   ├── categories
-│   │   │   │   │   ├── [category]
-│   │   │   │   │   │   └── threads
-│   │   │   │   │   │       ├── [slug]
-│   │   │   │   │   │       │   └── posts
-│   │   │   │   │   │       │       └── route.ts
-│   │   │   │   │   │       └── route.ts
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── posts
-│   │   │   │       └── [id]
-│   │   │   │           └── route.ts
-│   │   │   ├── lock
-│   │   │   │   └── route.ts
-│   │   │   ├── notifications
-│   │   │   │   ├── count
-│   │   │   │   │   └── route.ts
-│   │   │   │   ├── mark-read
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── route.ts
-│   │   │   ├── profile
-│   │   │   │   ├── [username]
-│   │   │   │   │   └── route.ts
-│   │   │   │   └── route.ts
-│   │   │   └── signup
-│   │   │       └── route.ts
-│   │   ├── books
-│   │   │   ├── [slug]
-│   │   │   │   ├── [index]
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   └── page.tsx
-│   │   ├── favicon.ico
-│   │   ├── forum
-│   │   │   ├── [category]
-│   │   │   │   ├── [slug]
-│   │   │   │   │   └── page.tsx
-│   │   │   │   └── page.tsx
-│   │   │   └── page.tsx
-│   │   ├── globals.css
-│   │   ├── HeaderClient.tsx
-│   │   ├── layout.tsx
-│   │   ├── login
-│   │   │   └── page.tsx
-│   │   ├── me
-│   │   │   └── page.tsx
-│   │   ├── notifications
-│   │   │   └── page.tsx
-│   │   ├── page.tsx
-│   │   ├── profile
-│   │   │   ├── page.tsx
-│   │   │   └── ProfileForm.tsx
-│   │   ├── providers.tsx
-│   │   ├── signup
-│   │   │   └── page.tsx
-│   │   └── u
-│   │       └── [username]
-│   │           └── page.tsx
-│   ├── components
-│   │   ├── BooksLiveClient.tsx
-│   │   ├── chapter
-│   │   │   ├── ChapterComposer.tsx
-│   │   │   ├── ChapterPostItem.tsx
-│   │   │   └── ChapterPostList.tsx
-│   │   ├── ChapterEditorClient.tsx
-│   │   ├── ChapterLiveClient.tsx
-│   │   ├── ChaptersLiveClient.tsx
-│   │   ├── follow
-│   │   │   └── FollowBookButton.tsx
-│   │   ├── MarkAllReadButton.tsx
-│   │   ├── Markdown.tsx
-│   │   ├── MarkReadButton.tsx
-│   │   ├── NotificationBell.tsx
-│   │   ├── ReplyFormClient.tsx
-│   │   └── ThreadLiveClient.tsx
-│   ├── hooks
-│   │   └── useEventStream.ts
-│   ├── lib
-│   │   ├── format.ts
-│   │   ├── slug.ts
-│   │   └── TimeAgo.ts
-│   ├── middleware.ts
-│   ├── server
-│   │   ├── access.ts
-│   │   ├── auth.ts
-│   │   ├── db.ts
-│   │   ├── events.ts
-│   │   ├── follow.ts
-│   │   ├── notify
-│   │   │   ├── emit.ts
-│   │   │   ├── publish.ts
-│   │   │   ├── queue.ts
-│   │   │   ├── recipients.ts
-│   │   │   └── types.ts
-│   │   └── redis.ts
-│   └── types
-│       └── next-auth.d.ts
-├── tree.txt
-└── tsconfig.json
+.gitignore
+README.md
+docs/ARCHITECTURE.md
+docs/ENV.example
+docs/_facts/git-files.txt
+docs/_facts/tree.git.txt
+eslint.config.mjs
+next.config.ts
+package-lock.json
+package.json
+pnpm-lock.yaml
+postcss.config.mjs
+prisma/migrations/20251021112034_init/migration.sql
+prisma/migrations/20251021113815_nextauth_relations/migration.sql
+prisma/migrations/20251023123003_forumthread_locked/migration.sql
+prisma/migrations/20251024171008_chapter_add_author_nullable/migration.sql
+prisma/migrations/20251029103625_notifications_refactor/migration.sql
+prisma/migrations/20251030100022_add_book_follow/migration.sql
+prisma/migrations/20251103082750_sprint_1_6_chapter_posts_and_status/migration.sql
+prisma/migrations/20251106092310_profile_move_username_and_timestamps/migration.sql
+prisma/migrations/20251106101035_/migration.sql
+prisma/migrations/20251208093412_add_chapter_content_html/migration.sql
+prisma/migrations/migration_lock.toml
+prisma/schema.prisma
+prisma/src/generated/prisma/client.d.ts
+prisma/src/generated/prisma/client.js
+prisma/src/generated/prisma/default.d.ts
+prisma/src/generated/prisma/default.js
+prisma/src/generated/prisma/edge.d.ts
+prisma/src/generated/prisma/edge.js
+prisma/src/generated/prisma/index-browser.js
+prisma/src/generated/prisma/index.d.ts
+prisma/src/generated/prisma/index.js
+prisma/src/generated/prisma/libquery_engine-darwin-arm64.dylib.node
+prisma/src/generated/prisma/package.json
+prisma/src/generated/prisma/query_engine_bg.js
+prisma/src/generated/prisma/query_engine_bg.wasm
+prisma/src/generated/prisma/runtime/edge-esm.js
+prisma/src/generated/prisma/runtime/edge.js
+prisma/src/generated/prisma/runtime/index-browser.d.ts
+prisma/src/generated/prisma/runtime/index-browser.js
+prisma/src/generated/prisma/runtime/library.d.ts
+prisma/src/generated/prisma/runtime/library.js
+prisma/src/generated/prisma/runtime/react-native.js
+prisma/src/generated/prisma/runtime/wasm-compiler-edge.js
+prisma/src/generated/prisma/runtime/wasm-engine-edge.js
+prisma/src/generated/prisma/schema.prisma
+prisma/src/generated/prisma/wasm-edge-light-loader.mjs
+prisma/src/generated/prisma/wasm-worker-loader.mjs
+prisma/src/generated/prisma/wasm.d.ts
+prisma/src/generated/prisma/wasm.js
+project_structure.txt
+public/default-avatar.svg
+public/file.svg
+public/globe.svg
+public/next.svg
+public/vercel.svg
+public/window.svg
+scripts/migrate-content-html.ts
+scripts/snapshot.sh]
+src/app/HeaderClient.tsx
+src/app/api/admin/outbox/drain/route.ts
+src/app/api/auth/[...nextauth]/route.ts
+src/app/api/books/[slug]/[index]/posts/[postId]/route.ts
+src/app/api/books/[slug]/[index]/posts/route.ts
+src/app/api/books/[slug]/[index]/publish/route.ts
+src/app/api/books/[slug]/[index]/route.ts
+src/app/api/books/[slug]/chapters/[id]/close/route.ts
+src/app/api/books/[slug]/chapters/[id]/open/route.ts
+src/app/api/books/[slug]/chapters/[id]/posts/route.ts
+src/app/api/books/[slug]/chapters/[id]/route.ts
+src/app/api/books/[slug]/chapters/route.ts
+src/app/api/books/[slug]/collaborators/route.ts
+src/app/api/books/[slug]/follow/route.ts
+src/app/api/books/[slug]/route.ts
+src/app/api/books/route.ts
+src/app/api/debug/session/route.ts
+src/app/api/events/stream/route.ts
+src/app/api/forum/categories/[category]/threads/[slug]/posts/route.ts
+src/app/api/forum/categories/[category]/threads/route.ts
+src/app/api/forum/categories/route.ts
+src/app/api/forum/posts/[id]/route.ts
+src/app/api/lock/route.ts
+src/app/api/notifications/count/route.ts
+src/app/api/notifications/mark-read/route.ts
+src/app/api/notifications/route.ts
+src/app/api/notifications/unread-count/route.ts
+src/app/api/profile/[username]/route.ts
+src/app/api/profile/route.ts
+src/app/api/signup/route.ts
+src/app/api/upload/avatar/route.ts
+src/app/api/uploads/images/route.ts
+src/app/books/[slug]/[index]/page.tsx
+src/app/books/[slug]/page.tsx
+src/app/books/page.tsx
+src/app/favicon.ico
+src/app/forum/[category]/[slug]/page.tsx
+src/app/forum/[category]/page.tsx
+src/app/forum/page.tsx
+src/app/globals.css
+src/app/layout.tsx
+src/app/login/page.tsx
+src/app/me/page.tsx
+src/app/notifications/page.tsx
+src/app/page.tsx
+src/app/profile/ProfileForm.tsx
+src/app/profile/page.tsx
+src/app/providers.tsx
+src/app/settings/profile/page.tsx
+src/app/signup/page.tsx
+src/app/u/[username]/page.tsx
+src/components/BooksLiveClient.tsx
+src/components/ChapterEditorClient.tsx
+src/components/ChapterLiveClient.tsx
+src/components/ChapterStatusBadge.tsx
+src/components/ChapterStatusToggleButton.tsx
+src/components/ChaptersLiveClient.tsx
+src/components/ClearAllButton.tsx
+src/components/CollapsibleSection.tsx
+src/components/MarkAllReadButton.tsx
+src/components/MarkReadButton.tsx
+src/components/Markdown.tsx
+src/components/NotificationBell.tsx
+src/components/ReplyFormClient.tsx
+src/components/RichChapterEditorClient.tsx
+src/components/ThreadLiveClient.tsx
+src/components/UserBadge.tsx
+src/components/UserMenu.tsx
+src/components/book/BookActionsMenu.tsx
+src/components/chapter/ChapterActionsMenu.tsx
+src/components/chapter/ChapterComposer.tsx
+src/components/chapter/ChapterIntroClient.tsx
+src/components/chapter/ChapterPostItem.tsx
+src/components/chapter/ChapterPostList.tsx
+src/components/editor/RichPostEditor.tsx
+src/components/editor/RichPostViewer.tsx
+src/components/follow/FollowBookButton.tsx
+src/components/ui/IconButton.tsx
+src/hooks/useEventStream.ts
+src/hooks/useNotificationsFeed.ts
+src/hooks/useRealtime.ts
+src/lib/TimeAgo.ts
+src/lib/apiClient.ts
+src/lib/format.ts
+src/lib/notifyUnread.ts
+src/lib/readingTime.ts
+src/lib/richEditorConfig.ts
+src/lib/slug.ts
+src/middleware.ts
+src/server/access.ts
+src/server/auth.ts
+src/server/contracts.ts
+src/server/contracts/forum.ts
+src/server/db.ts
+src/server/dto.ts
+src/server/events.ts
+src/server/events/types.ts
+src/server/follow.ts
+src/server/fragments.ts
+src/server/http.ts
+src/server/notify/emit.ts
+src/server/notify/publish.ts
+src/server/notify/queue.ts
+src/server/notify/recipients.ts
+src/server/notify/types.ts
+src/server/r2.ts
+src/server/redis.ts
+src/server/render/sanitizeHtml.ts
+src/server/repos/chapters.ts
+src/server/repos/forum.ts
+src/server/schemas.ts
+src/server/serialize.ts
+src/server/services/books.ts
+src/server/services/chapters.ts
+src/server/services/notifications.ts
+src/types/next-auth.d.ts
+tree.txt
+tree_api.txt
+tree_components.txt
+tree_core.txt
+tree_hooks.txt
+tree_notify.txt
+tsconfig.json

@@ -39,14 +39,20 @@ export const authOptions: NextAuthOptions = {
             id: true,
             email: true,
             username: true, // ← ВАЖНО: username берём из User
-            hashedPassword: true,
-            profile: { select: { displayName: true, avatarUrl: true } },
+          hashedPassword: true,
+          emailVerifiedAt: true,
+          profile: { select: { displayName: true, avatarUrl: true } },
+
           },
         });
         if (!user || !user.hashedPassword) return null;
 
         const ok = await bcrypt.compare(parsed.data.password, user.hashedPassword);
         if (!ok) return null;
+
+                // запрет логина до подтверждения email
+        if (!user.emailVerifiedAt) return null;
+
 
         // Прокидываем витринные поля; username положим в user (заберём в jwt)
         return {

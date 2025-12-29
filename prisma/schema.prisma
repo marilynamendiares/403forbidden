@@ -47,6 +47,7 @@ model User {
   hashedPassword String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
+  emailVerifiedAt  DateTime?
   accounts       Account[]
   sessions       Session[]
 
@@ -75,7 +76,7 @@ model User {
 model Profile {
   id     String @id @default(cuid())
   userId String @unique
-  user   User   @relation(fields: [userId], references: [id])
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   displayName String
   bio         String?
@@ -419,6 +420,27 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+enum AuthCodePurpose {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+model AuthCode {
+  id        String          @id @default(cuid())
+  email     String
+  purpose   AuthCodePurpose
+  codeHash  String
+  expiresAt DateTime
+  tries     Int             @default(0)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  // важно: один активный код на email+purpose (чтобы resend перезаписывал)
+  @@unique([email, purpose])
+  @@index([email, purpose, expiresAt])
+}
+
 
 model Notification {
   id         String   @id @default(cuid())

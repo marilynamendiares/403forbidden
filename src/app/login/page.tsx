@@ -19,7 +19,13 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const callbackUrl = useMemo(() => normalizeNext(searchParams), [searchParams]);
 
-  const [email, setEmail] = useState("");
+  // A) query params
+  const verified = searchParams.get("verified") === "1";
+  const resetDone = searchParams.get("reset") === "1";
+  const emailFromQuery = searchParams.get("email") || "";
+
+  // B) email init from query
+  const [email, setEmail] = useState(emailFromQuery);
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
@@ -40,6 +46,21 @@ export default function LoginPage() {
   return (
     <div className="mx-auto max-w-sm py-16">
       <h1 className="text-2xl font-semibold mb-6">Sign in</h1>
+
+      {/* C) success banner after verification */}
+      {verified && (
+        <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          Email confirmed. You can sign in now.
+        </div>
+      )}
+
+            {resetDone && (
+        <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+          Password updated. You can sign in now.
+        </div>
+      )}
+
+
       <form onSubmit={handleSubmit} className="space-y-4">
         <input
           className="w-full border rounded px-3 py-2"
@@ -55,8 +76,32 @@ export default function LoginPage() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
         />
+
         {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="w-full rounded bg-black text-white py-2">Sign in</button>
+
+        {/* D) helpful hint to verify email */}
+        {error && email && (
+          <p className="text-xs opacity-70">
+            If you just signed up, you may need to{" "}
+            <a
+              className="underline hover:opacity-100"
+              href={`/verify-email?email=${encodeURIComponent(email)}`}
+            >
+              verify your email
+            </a>
+            .
+          </p>
+        )}
+
+        <button className="w-full rounded bg-black text-white py-2">
+          Sign in
+        </button>
+
+        <p className="text-xs opacity-70 text-center">
+          <a className="underline hover:opacity-100" href="/forgot-password">
+            Forgot password?
+          </a>
+        </p>
       </form>
     </div>
   );

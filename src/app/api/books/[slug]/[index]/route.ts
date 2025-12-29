@@ -71,8 +71,11 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
     }
   }
 
+  const myRole = me ? await getRole(me, chapter.book.id) : null;
   const canEdit =
-    !!me && (me === chapter.book.ownerId || me === chapter.authorId);
+    !!me &&
+    (me === chapter.book.ownerId ||
+      (myRole === "EDITOR" && me === chapter.authorId));
 
   return Response.json({
     book: { title: chapter.book.title, slug: chapter.book.slug },
@@ -180,9 +183,8 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     }
 
     // status — любой EDITOR (даже если не автор); AUTHOR/VIEWER — нельзя
-    if (wantsStatus && myRole !== "EDITOR") {
-      return new Response("Forbidden", { status: 403 });
-    }
+    // status — только OWNER (строго по твоей модели ролей)
+    if (wantsStatus) return new Response("Forbidden", { status: 403 });
   }
 
   // если меняем контент — санитизируем HTML перед записью
@@ -287,18 +289,8 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   });
   if (!chapter) return new Response("Not found", { status: 404 });
 
-  const myRole = (await getRole(me, chapter.bookId)) as
-    | "OWNER"
-    | "EDITOR"
-    | "AUTHOR"
-    | "VIEWER"
-    | null;
   const isOwner = chapter.book.ownerId === me;
-  const canEditorDeleteOwn = myRole === "EDITOR" && chapter.authorId === me;
-
-  if (!isOwner && !canEditorDeleteOwn) {
-    return new Response("Forbidden", { status: 403 });
-  }
+  if (!isOwner) return new Response("Forbidden", { status: 403 });
 
   await prisma.chapter.delete({ where: { id: chapter.id } });
 

@@ -38,6 +38,57 @@ export function ChapterIntroClient({
   const [content, setContent] = useState(defaultContent);
   const [isPending, startTransition] = useTransition();
 
+  // ── soft-lock (server) ──────────────────────────────────────────────
+  const [tabId] = useState(() => crypto.randomUUID());
+  type LockedBy = {
+    userId: string;
+    username?: string;
+    avatarUrl?: string | null;
+    since?: number;
+  };
+
+  const [lock, setLock] = useState<
+    | { status: "idle" }
+    | { status: "mine" }
+    | { status: "locked"; lockedBy: LockedBy }
+    | { status: "error"; message: string }
+  >({ status: "idle" });
+
+
+  async function lockCall(action: "acquire_or_beat" | "release" | "status") {
+    const res = await fetch("/api/lock", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        resource: "chapter",
+        id: chapterId,
+        action,
+        tabId,
+      }),
+    });
+
+    // 423 тоже может быть JSON
+    const payload = await res.json().catch(() => ({}));
+
+    if (res.status === 423) {
+      setLock({
+        status: "locked",
+        lockedBy: payload.lockedBy ?? { userId: "unknown", username: "someone", avatarUrl: null },
+      });
+      return false;
+    }
+
+    if (!res.ok) {
+      setLock({ status: "error", message: payload?.error ?? "lock_failed" });
+      return false;
+    }
+
+    // ok
+    setLock({ status: "mine" });
+    return true;
+  }
+
+
   // baseline, от которого считаем "грязность"
   const baseline = useMemo(
     () => ({ title: defaultTitle, content: defaultContent }),
@@ -212,18 +263,21 @@ export function ChapterIntroClient({
 
     startTransition(async () => {
       await onSave(fd);
+      await lockCall("release");
       setEditing(false);
       // после успешного сохранения страница перерендерится с новым baseline,
       // а эффект автосейва сам очистит драфт
     });
   }
 
-  function handleCancel() {
-    if (isPending) return;
-    setEditing(false);
-    // откатываемся к baseline и чистим драфт
-    discardLocalDraft();
-  }
+async function handleCancel() {
+  if (isPending) return;
+  await lockCall("release");
+  setEditing(false);
+  discardLocalDraft();
+}
+
+
 
   // хоткей Cmd/Ctrl+S только в режиме редактирования
   useEffect(() => {
@@ -239,6 +293,99 @@ export function ChapterIntroClient({
     window.addEventListener("keydown", onKey as any);
     return () => window.removeEventListener("keydown", onKey as any);
   }, [editing, title, content, canEdit, isPending]); // deps ок
+
+    // heartbeat: пока редактируем и лок мой
+  useEffect(() => {
+    if (!editing) return;
+
+    let stopped = false;
+
+    const tick = async () => {
+      if (stopped) return;
+
+      // если уже знаем, что лок чужой/ошибка — не спамим
+      if (lock.status === "locked" || lock.status === "error") return;
+
+      await lockCall("acquire_or_beat");
+    };
+
+    // сразу пробуем beat при входе
+    tick();
+
+    const interval = window.setInterval(tick, 45_000);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
+  }, [editing, lock.status]);
+
+  useEffect(() => {
+  if (editing && lock.status === "locked") {
+    setEditing(false);
+  }
+}, [editing, lock.status]);
+
+
+
+  // release при выходе из edit и при размонтировании
+  useEffect(() => {
+    return () => {
+      // best-effort
+      fetch("/api/lock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resource: "chapter",
+          id: chapterId,
+          action: "release",
+          tabId,
+        }),
+      }).catch(() => {});
+    };
+  }, [chapterId, tabId]);
+
+    // pre-check: сразу показать, что интро занято (без захвата лока)
+  useEffect(() => {
+    if (!chapterId) return;
+    if (editing) return;
+
+    let cancelled = false;
+
+    const run = async () => {
+      const res = await fetch("/api/lock", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          resource: "chapter",
+          id: chapterId,
+          action: "status",
+          tabId,
+        }),
+      });
+
+      const payload = await res.json().catch(() => ({}));
+      if (cancelled) return;
+
+      if (payload?.locked) {
+        setLock({
+          status: "locked",
+          lockedBy: payload.lockedBy ?? { userId: "unknown", username: "someone" },
+        });
+      } else {
+        // если свободно — сбрасываем в idle (чтобы кнопка снова стала активной)
+        setLock({ status: "idle" });
+      }
+    };
+
+    run();
+    const interval = window.setInterval(run, 15_000); // можно 10–20с
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [chapterId, tabId, editing]);
+
 
   // ────────────────────────────────────────────────────────────────────────────
   // VIEW MODE
@@ -259,15 +406,46 @@ export function ChapterIntroClient({
           </p>
         )}
 
-        {canEdit && (
-          <button
-            type="button"
-            onClick={() => setEditing(true)}
-            className="mt-4 rounded-full border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900"
-          >
-            Edit chapter
-          </button>
-        )}
+{canEdit && (
+  <div className="mt-4 flex items-center gap-3">
+    <button
+      type="button"
+      disabled={lock.status === "locked"}
+      onClick={async () => {
+        // если уже знаем, что занято — не дергаем acquire
+        if (lock.status === "locked") return;
+
+        const ok = await lockCall("acquire_or_beat");
+        if (ok) setEditing(true);
+      }}
+      className="rounded-md border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-40 disabled:hover:bg-transparent"
+    >
+      Edit chapter
+    </button>
+
+    {lock.status === "locked" && (
+<span className="inline-flex items-center gap-2 text-sm text-amber-300/90">
+  <span className="h-8 w-8 overflow-hidden rounded-full border border-amber-500/30">
+    {lock.lockedBy.avatarUrl ? (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={lock.lockedBy.avatarUrl}
+        alt=""
+        className="h-full w-full object-cover"
+      />
+    ) : (
+      <span className="flex h-full w-full items-center justify-center text-[10px] opacity-80">
+        {(lock.lockedBy.username ?? "U").slice(0, 1).toUpperCase()}
+      </span>
+    )}
+  </span>
+  <span>сейчас редактирует</span>
+</span>
+
+    )}
+  </div>
+)}
+
       </section>
     );
   }
@@ -278,6 +456,15 @@ export function ChapterIntroClient({
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <section className="mt-4 space-y-3">
+            {lock.status === "locked" && (
+        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          Chapter is being edited by{" "}
+          <span className="font-medium">
+            @{lock.lockedBy.username ?? lock.lockedBy.userId}
+          </span>
+          . Try again later.
+        </div>
+      )}
       {/* шапка режима редактирования */}
       <div className="flex flex-col gap-1 text-xs">
         <span className="uppercase tracking-wide text-neutral-500">
@@ -304,26 +491,29 @@ export function ChapterIntroClient({
           onChange={(e) => setTitle(e.target.value)}
           className="w-full rounded-md border border-neutral-700 bg-transparent px-3 py-2 text-base"
           placeholder="Chapter title…"
-          disabled={!canEdit || isPending}
+          disabled={!canEdit || isPending || lock.status !== "mine"}
+
         />
 
         <div className="post-body prose prose-invert max-w-none">
           <RichPostEditor
             value={content}
             onChange={setContent}
-            disabled={!canEdit || isPending}
+          disabled={!canEdit || isPending || lock.status !== "mine"}
+
           />
         </div>
 
         {/* низ: слева Save/Cancel, справа — статистика */}
         <div className="flex items-center justify-between pt-1">
           <div className="flex gap-3 text-xs text-muted-foreground">
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={!dirty || isPending || !canEdit}
-              className="hover:text-foreground disabled:opacity-50"
-            >
+<button
+  type="button"
+  onClick={handleSave}
+  disabled={!dirty || isPending || !canEdit || lock.status !== "mine"}
+  className="hover:text-foreground disabled:opacity-50"
+>
+
               {isPending ? "Saving…" : "Save"}
             </button>
             <button
