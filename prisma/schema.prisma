@@ -40,6 +40,15 @@ enum BookType {
   COOP
 }
 
+enum CharacterAppStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  NEEDS_CHANGES
+  APPROVED
+}
+
+
 // ---------- Core ----------
 model User {
   id             String    @id @default(cuid())
@@ -50,6 +59,7 @@ model User {
   emailVerifiedAt  DateTime?
   accounts       Account[]
   sessions       Session[]
+  characterApplications CharacterApplication[]
 
   // username в User (будет @unique, NOT NULL — зажмём в SQL ниже)
   username String @unique
@@ -86,6 +96,29 @@ model Profile {
   createdAt DateTime @default(now())
   updatedAt DateTime @default(now()) @updatedAt
 }
+
+model CharacterApplication {
+  id        String            @id @default(cuid())
+  userId    String
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name      String
+  form      Json              // вся анкета (поля будем расширять без миграций)
+  status    CharacterAppStatus @default(DRAFT)
+
+  // модерация (MVP)
+  moderatorId   String?
+  moderatorNote String?
+
+  lastSubmittedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, status, updatedAt(sort: Desc)])
+  @@index([status, updatedAt(sort: Desc)])
+}
+
 
 // ---------- Pages ----------
 model Page {

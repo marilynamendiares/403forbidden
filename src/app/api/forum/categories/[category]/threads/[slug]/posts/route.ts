@@ -4,9 +4,16 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
+import { NextResponse } from "next/server";
 import { emit } from "@/server/events";
+import { isPlayer } from "@/server/player";
 
 type Ctx = { params: Promise<{ category: string; slug: string }> };
+
+// ✅ Non-player может писать посты только в этих категориях (подстрой под свои slug’и)
+const RESTRICTED_CAN_POST_CATEGORIES = new Set<string>([
+  "offtopic"
+]);
 
 export async function GET(req: NextRequest, { params }: Ctx) {
   const { category, slug } = await params;
@@ -15,7 +22,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     where: { slug, category: { slug: category } },
     select: { id: true },
   });
-  if (!thread) return new Response("Thread not found", { status: 404 });
+  if (!thread) return NextResponse.json({ error: "thread_not_found" }, { status: 404 });
 
   const url = new URL(req.url);
   const cursor = url.searchParams.get("cursor") ?? undefined;
@@ -35,7 +42,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
       author: {
         select: {
           id: true,
-          username: true, // ← username лежит в User
+          username: true,
           profile: {
             select: {
               displayName: true,
@@ -53,7 +60,7 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     nextCursor = last.id;
   }
 
-  return Response.json({ items: posts, nextCursor });
+  return NextResponse.json({ items: posts, nextCursor });
 }
 
 const CreatePost = z.object({
@@ -64,18 +71,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const { category, slug } = await params;
 
   const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
-  if (!userId) return new Response("Unauthorized", { status: 401 });
+  const userId =
+    ((session as any)?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined);
+
+  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // ✅ Мягкий режим: non-player может писать только в allowlist категориях
+  const player = await isPlayer(userId);
+  if (!player && !RESTRICTED_CAN_POST_CATEGORIES.has(category)) {
+    return NextResponse.json({ error: "player_required" }, { status: 403 });
+  }
 
   const thread = await prisma.forumThread.findFirst({
     where: { slug, category: { slug: category } },
     select: { id: true },
   });
-  if (!thread) return new Response("Thread not found", { status: 404 });
+  if (!thread) return NextResponse.json({ error: "thread_not_found" }, { status: 404 });
 
   const body = await req.json().catch(() => null);
   const parsed = CreatePost.safeParse(body);
-  if (!parsed.success) return new Response("Bad Request", { status: 400 });
+  if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
   const { content } = parsed.data;
 
@@ -97,5 +113,5 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     at: Date.now(),
   });
 
-  return Response.json(post, { status: 201 });
+  return NextResponse.json(post, { status: 201 });
 }
