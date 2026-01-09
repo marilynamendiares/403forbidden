@@ -3,8 +3,11 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { CreateThread } from "@/server/schemas";
-import { getThreadsByCategory, createThread } from "@/server/repos/forum";
+import { getThreadsByCategory, createThread, getCategoryPolicyBySlug } from "@/server/repos/forum";
 import { requirePlayer } from "@/server/player";
+import { requireAdmin } from "@/server/admin";
+import { isAdminOnlyCategory } from "@/server/forumAcl";
+
 
 type Ctx = { params: Promise<{ category: string }> };
 
@@ -43,12 +46,36 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // ✅ Создавать треды можно только полноценным игрокам (approved character)
+// ✅ Thread creation policy (DB-driven, with slug-based fallback)
+const pol = await getCategoryPolicyBySlug(category).catch(() => null);
+
+const vis = (pol?.createThreadVisibility ?? null) as
+  | "PUBLIC"
+  | "MEMBERS"
+  | "PLAYERS"
+  | "ADMIN"
+  | null;
+
+// Fallback for older DB (before migration) or missing record:
+const effectiveVis =
+  vis ?? (isAdminOnlyCategory(category) ? "ADMIN" : "PLAYERS");
+
+if (effectiveVis === "ADMIN") {
+  try {
+    requireAdmin(session as any);
+  } catch {
+    return NextResponse.json({ error: "admin_required" }, { status: 403 });
+  }
+} else if (effectiveVis === "PLAYERS") {
   try {
     await requirePlayer(userId);
   } catch {
     return NextResponse.json({ error: "player_required" }, { status: 403 });
   }
+}
+// MEMBERS/PUBLIC -> login is enough (already checked by userId)
+
+
 
   const body = await req.json().catch(() => null);
   const parsed = CreateThread.safeParse(body);

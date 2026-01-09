@@ -2,6 +2,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { headers, cookies } from "next/headers";
+import { ssrFetch } from "@/server/ssrFetch";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/server/auth";
+import { isPlayer } from "@/server/player";
+import { isAdminSession } from "@/server/admin";
+import { prisma } from "@/server/db";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +20,8 @@ async function getThreads(category: string, cursor?: string) {
   const url = new URL(`${origin}/api/forum/categories/${category}/threads`);
   if (cursor) url.searchParams.set("cursor", cursor);
 
-  const res = await fetch(url, { cache: "no-store" });
+const res = await ssrFetch(url);
+
   if (!res.ok) return { items: [] as any[], nextCursor: null as string | null };
   return res.json() as Promise<{ items: any[]; nextCursor: string | null }>;
 }
@@ -29,6 +36,42 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   const { cursor } = await searchParams;       // Next 15: await
 
   const { items, nextCursor } = await getThreads(category, cursor);
+
+  // --- ACL: can current user create thread in this category? ---
+  const session = await getServerSession(authOptions);
+  const admin = isAdminSession(session as any);
+
+  const userId =
+    ((session as any)?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined);
+
+  const player = userId ? await isPlayer(userId) : false;
+
+  const cat = await prisma.forumCategory.findUnique({
+    where: { slug: category },
+    select: { createThreadVisibility: true },
+  });
+
+  const createVis = (cat?.createThreadVisibility ?? "PLAYERS") as
+    | "PUBLIC"
+    | "MEMBERS"
+    | "PLAYERS"
+    | "ADMIN";
+
+  const canCreateThread =
+    admin ||
+    (createVis === "MEMBERS" && !!userId) ||
+    (createVis === "PUBLIC" && !!userId) || // guests всё равно не смогут (нет session)
+    (createVis === "PLAYERS" && player);
+
+  const createHint =
+    !userId
+      ? "Sign in to create threads."
+      : createVis === "ADMIN"
+        ? "Only admins can create threads here."
+        : createVis === "PLAYERS" && !player
+          ? "Create threads is available after character approval."
+          : "You can't create threads here.";
 
   return (
     <div className="space-y-6">
@@ -71,7 +114,13 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
         </div>
       )}
 
-      <CreateThreadForm category={category} />
+            {canCreateThread ? (
+        <CreateThreadForm category={category} />
+      ) : (
+        <div className="border border-neutral-800 rounded-xl p-4 text-sm opacity-70">
+          {createHint}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
 // src/app/api/forum/categories/[category]/threads/[slug]/posts/route.ts
 import { prisma } from "@/server/db";
+import { getCategoryPolicyBySlug } from "@/server/repos/forum";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { z } from "zod";
@@ -7,13 +8,10 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { emit } from "@/server/events";
 import { isPlayer } from "@/server/player";
+import { restrictedCanPost, isAdminOnlyCategory } from "@/server/forumAcl";
+import { requireAdmin } from "@/server/admin";
 
 type Ctx = { params: Promise<{ category: string; slug: string }> };
-
-// ✅ Non-player может писать посты только в этих категориях (подстрой под свои slug’и)
-const RESTRICTED_CAN_POST_CATEGORIES = new Set<string>([
-  "offtopic"
-]);
 
 export async function GET(req: NextRequest, { params }: Ctx) {
   const { category, slug } = await params;
@@ -77,11 +75,42 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  // ✅ Мягкий режим: non-player может писать только в allowlist категориях
+// ✅ Posting policy (DB-driven, with slug-based fallback)
+const pol = await getCategoryPolicyBySlug(category).catch(() => null);
+
+const vis = (pol?.createPostVisibility ?? null) as
+  | "PUBLIC"
+  | "MEMBERS"
+  | "PLAYERS"
+  | "ADMIN"
+  | null;
+
+// Fallback for older DB (before migration) or missing record:
+const effectiveVis =
+  vis ?? (isAdminOnlyCategory(category) ? "ADMIN" : "MEMBERS");
+
+if (effectiveVis === "ADMIN") {
+  try {
+    requireAdmin(session as any);
+  } catch {
+    return NextResponse.json({ error: "admin_required" }, { status: 403 });
+  }
+} else if (effectiveVis === "PLAYERS") {
   const player = await isPlayer(userId);
-  if (!player && !RESTRICTED_CAN_POST_CATEGORIES.has(category)) {
+  if (!player) {
     return NextResponse.json({ error: "player_required" }, { status: 403 });
   }
+} else if (effectiveVis === "MEMBERS" || effectiveVis === "PUBLIC") {
+  // logged-in already ensured above
+  // Fallback behavior (when DB flags are missing) for non-admin categories:
+  // if you still want to keep the old allowlist constraint, keep it here:
+  if (!vis) {
+    const player = await isPlayer(userId);
+    if (!player && !restrictedCanPost(category)) {
+      return NextResponse.json({ error: "player_required" }, { status: 403 });
+    }
+  }
+}
 
   const thread = await prisma.forumThread.findFirst({
     where: { slug, category: { slug: category } },

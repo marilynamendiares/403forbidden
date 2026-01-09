@@ -1,7 +1,6 @@
 // src/app/HeaderClient.tsx
 "use client";
 
-import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -173,35 +172,21 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
     !hydrated || (!me && (status === "loading" || status === "authenticated"));
 
 
-  return (
-    <div className="flex items-center gap-2">
-      <nav className="flex items-center gap-2">
-        <Link href="/forum" className={linkClass("/forum")}>
-          Forum
-        </Link>
-        <Link href="/books" className={linkClass("/books")}>
-          Books
-        </Link>
-      </nav>
+return (
+  <div className="min-w-36 flex justify-end">
+    {shouldShowSkeleton ? (
+      <div className="h-8 w-36 rounded bg-neutral-900/50 animate-pulse" />
+    ) : status === "authenticated" && me ? (
+      <UserMenu username={me.username} avatarUrl={me.avatarUrl} notifCount={unread} />
+    ) : (
+      <button
+        onClick={handleSignIn}
+        className="rounded bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700 transition"
+      >
+        Sign in
+      </button>
+    )}
+  </div>
+);
 
-      <div className="min-w-[9rem] flex justify-end">
-        {shouldShowSkeleton ? (
-          <div className="h-8 w-36 rounded bg-neutral-900/50 animate-pulse" />
-        ) : status === "authenticated" && me ? (
-          <UserMenu
-            username={me.username}
-            avatarUrl={me.avatarUrl}
-            notifCount={unread}
-          />
-        ) : (
-          <button
-            onClick={handleSignIn}
-            className="rounded bg-neutral-800 px-3 py-1 text-sm hover:bg-neutral-700 transition"
-          >
-            Sign in
-          </button>
-        )}
-      </div>
-    </div>
-  );
 }

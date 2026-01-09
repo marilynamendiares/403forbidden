@@ -51,7 +51,30 @@ export async function getThreadsByCategory(params: {
 export async function getCategories() {
   return prisma.forumCategory.findMany({
     orderBy: { title: "asc" },
-    select: { id: true, slug: true, title: true, desc: true, _count: { select: { threads: true } } },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      desc: true,
+      readVisibility: true,
+      createThreadVisibility: true,
+      createPostVisibility: true,
+      _count: { select: { threads: true } },
+    },
+  });
+}
+
+export async function getCategoryPolicyBySlug(slug: string) {
+  return prisma.forumCategory.findUnique({
+    where: { slug },
+    select: {
+      id: true,
+      slug: true,
+      // these fields exist after migration
+      readVisibility: true,
+      createThreadVisibility: true,
+      createPostVisibility: true,
+    },
   });
 }
 

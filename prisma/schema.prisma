@@ -220,11 +220,29 @@ model ChapterPost {
 }
 
 // ---------- Forum ----------
+enum ForumReadVisibility {
+  PUBLIC   // guests can read
+  MEMBERS  // any logged-in user (restricted + player)
+  PLAYERS  // only players (approved character)
+}
+
+enum ForumWriteVisibility {
+  MEMBERS  // logged-in can create posts
+  PLAYERS  // only players can create posts
+  ADMIN    // only admins can create posts
+}
+
 model ForumCategory {
   id      String        @id @default(cuid())
   slug    String        @unique
   title   String
   desc    String?
+
+  // ✅ ACL flags (DB-driven)
+  readVisibility        ForumReadVisibility  @default(MEMBERS)
+  createThreadVisibility ForumWriteVisibility @default(PLAYERS)
+  createPostVisibility  ForumWriteVisibility @default(MEMBERS)
+
   threads ForumThread[]
 }
 

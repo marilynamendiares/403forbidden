@@ -1,6 +1,8 @@
 import { prisma } from "@/server/db";
 
-export async function isPlayer(userId: string) {
+export async function isPlayer(userId: string | null) {
+  if (!userId) return false;
+
   const approved = await prisma.characterApplication.findFirst({
     where: { userId, status: "APPROVED" },
     select: { id: true },
@@ -8,7 +10,14 @@ export async function isPlayer(userId: string) {
   return !!approved;
 }
 
-export async function requirePlayer(userId: string) {
+
+export async function requirePlayer(userId: string | null) {
+  if (!userId) {
+    throw Object.assign(new Error("PLAYER_REQUIRED"), {
+      status: 403,
+      code: "PLAYER_REQUIRED",
+    });
+  }
   const ok = await isPlayer(userId);
   if (!ok) {
     throw Object.assign(new Error("PLAYER_REQUIRED"), {

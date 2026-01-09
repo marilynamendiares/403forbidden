@@ -4,6 +4,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
 import HeaderClient from "./HeaderClient";
+import TopNavClient from "./TopNavClient";
+import BrandMark from "./BrandMark";
 
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
@@ -27,15 +29,37 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-black text-white`}>
         <Providers>
-          <header className="max-w-5xl mx-auto p-4 flex justify-between items-center">
-            <Link
+<header className="max-w-5xl mx-auto p-4 grid grid-cols-3 items-center">
+  {/* Left */}
+  <div className="justify-self-start">
+<Link
   href="/"
-  className="terminal-title text-xl font-semibold text-slate-100 hover:text-slate-50 transition-colors"
+  className={[
+    "font-mono",
+    "uppercase tracking-[0.22em]",
+    "text-[12px] leading-none",
+    "text-neutral-200 hover:text-white transition",
+    "select-none",
+  ].join(" ")}
 >
-  403 Forbidden
+  <BrandMark text="403 Forbidden" />
 </Link>
-            <HeaderClient sseEventName={sseEventName} />
-          </header>
+
+  </div>
+
+  {/* Center */}
+  <div className="justify-self-center">
+    {/* client nav (uses pathname) */}
+    {/* eslint-disable-next-line @next/next/no-async-client-component */}
+    {/**/}
+    <TopNavClient />
+  </div>
+
+  {/* Right */}
+  <div className="justify-self-end">
+    <HeaderClient sseEventName={sseEventName} />
+  </div>
+</header>
           <main className="max-w-5xl mx-auto p-4">{children}</main>
         </Providers>
       </body>
