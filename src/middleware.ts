@@ -12,6 +12,15 @@ export async function middleware(req: NextRequest) {
   const isAuth = !!token;
   const { pathname, searchParams } = req.nextUrl;
 
+    // 0) Temporary redirect: /archive/* -> /world/*
+  // (Remove later when /archive becomes a real "Archive" section.)
+  if (pathname === "/archive" || pathname.startsWith("/archive/")) {
+    const url = req.nextUrl.clone();
+    url.pathname = pathname.replace(/^\/archive(?=\/|$)/, "/world");
+    return NextResponse.redirect(url);
+  }
+
+
   // 1) Уже залогинен и пришёл на /login → уводим на next (или /)
   if (pathname === "/login" && isAuth) {
     const next = searchParams.get("next") || "/";
@@ -37,5 +46,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/profile/:path*", "/me"],
+  matcher: ["/login", "/profile/:path*", "/me", "/archive/:path*"],
 };

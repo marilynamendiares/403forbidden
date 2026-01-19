@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "migrate:content-html": "tsx scripts/migrate-content-html.ts",
-    "seed:forum": "tsx scripts/seed-forum-categories.ts"
+    "seed:forum": "tsx scripts/seed-forum-categories.ts",
+    "seed:shop": "tsx scripts/seed-shop.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.0",

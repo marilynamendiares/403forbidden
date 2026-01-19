@@ -120,6 +120,11 @@ export async function listChaptersForViewer(input: {
       isDraft: true,
       publishedAt: true,
       createdAt: true,
+      _count: {
+        select: {
+          posts: true, // ✅ Chapter.posts relation
+        },
+      },
     },
   });
 

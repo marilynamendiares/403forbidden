@@ -48,11 +48,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   </div>
 
   {/* Center */}
-  <div className="justify-self-center">
-    {/* client nav (uses pathname) */}
-    {/* eslint-disable-next-line @next/next/no-async-client-component */}
-    {/**/}
-    <TopNavClient />
+  {/* Center */}
+  <div className="justify-self-center w-full">
+    {/* Narrow container for top nav (this defines underline width) */}
+    <div className="mx-auto w-full max-w-2xl">
+      <TopNavClient />
+    </div>
   </div>
 
   {/* Right */}

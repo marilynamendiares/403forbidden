@@ -42,7 +42,63 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     cursor,
   });
 
-  // Контракт ответа остаётся прежним
+  // ── Likes + Reputation meta (MVP) ─────────────────────────────
+  // (Без N+1: группируем по postId)
+  const session = await getServerSession(authOptions);
+  const me =
+    (session?.user?.id as string | undefined) ??
+    ((session as any)?.userId as string | undefined) ??
+    null;
+
+  const postIds = items.map((p: any) => p.id).filter(Boolean) as string[];
+
+  if (postIds.length > 0) {
+    const [likesGrouped, repsGrouped, likedRows, repRows] = await Promise.all([
+      prisma.chapterPostLike.groupBy({
+        by: ["postId"],
+        where: { postId: { in: postIds } },
+        _count: { _all: true },
+      }),
+      prisma.chapterPostReputationGrant.groupBy({
+        by: ["postId"],
+        where: { postId: { in: postIds } },
+        _sum: { amount: true },
+      }),
+      me
+        ? prisma.chapterPostLike.findMany({
+            where: { userId: me, postId: { in: postIds } },
+            select: { postId: true },
+          })
+        : Promise.resolve([] as { postId: string }[]),
+      me
+        ? prisma.chapterPostReputationGrant.findMany({
+            where: { fromUserId: me, postId: { in: postIds } },
+            select: { postId: true },
+          })
+        : Promise.resolve([] as { postId: string }[]),
+    ]);
+
+    const likesCountMap = new Map<string, number>();
+    likesGrouped.forEach((g) => likesCountMap.set(g.postId, g._count._all));
+
+    const repCountMap = new Map<string, number>();
+    repsGrouped.forEach((g) =>
+      repCountMap.set(g.postId, g._sum.amount ?? 0)
+    );
+
+    const likedSet = new Set(likedRows.map((r) => r.postId));
+    const repGivenSet = new Set(repRows.map((r) => r.postId));
+
+    for (const it of items as any[]) {
+      const pid = it.id as string;
+      it.likesCount = likesCountMap.get(pid) ?? 0;
+      it.likedByMe = me ? likedSet.has(pid) : false;
+      it.repCount = repCountMap.get(pid) ?? 0;
+      it.repGivenByMe = me ? repGivenSet.has(pid) : false;
+    }
+  }
+  // ─────────────────────────────────────────────────────────────
+
   return Response.json({ items, nextCursor });
 }
 

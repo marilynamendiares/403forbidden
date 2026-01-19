@@ -77,16 +77,17 @@ if (effectiveVis === "ADMIN") {
 
 
 
-  const body = await req.json().catch(() => null);
-  const parsed = CreateThread.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+const body = await req.json().catch(() => null);
+const parsed = CreateThread.safeParse(body);
+if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
 
-  const thread = await createThread({
-    categorySlug: category,
-    authorId: userId,
-    title: parsed.data.title,
-    content: parsed.data.content,
-  });
+const thread = await createThread({
+  categorySlug: category,
+  authorId: userId,
+  title: parsed.data.title,
+  // content может отсутствовать или быть пустым — repo сам решит, создавать пост или нет
+  content: (parsed.data as any).content ?? null,
+});
 
-  return NextResponse.json(thread, { status: 201 });
+return NextResponse.json(thread, { status: 201 });
 }

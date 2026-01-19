@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { ThumbsUp, Star } from "lucide-react";
 import Markdown from "@/components/Markdown";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
 import { RichPostViewer } from "@/components/editor/RichPostViewer";
@@ -14,6 +15,12 @@ export function ChapterPostItem(props: {
     contentMd: string;
     createdAt: string;
     editedAt?: string | null;
+
+    // meta (from API)
+    likesCount?: number;
+    likedByMe?: boolean;
+    repCount?: number;
+    repGivenByMe?: boolean;
   };
   author: { id: string; username: string; avatarUrl: string | null };
   currentUserId?: string | null;
@@ -30,15 +37,29 @@ export function ChapterPostItem(props: {
   const display = dt.toLocaleString();
   const isMine = !!currentUserId && currentUserId === author.id;
 
+  const [likesCount, setLikesCount] = useState<number>(post.likesCount ?? 0);
+  const [likedByMe, setLikedByMe] = useState<boolean>(post.likedByMe ?? false);
+
+  const [repCount, setRepCount] = useState<number>(post.repCount ?? 0);
+  const [repGivenByMe, setRepGivenByMe] = useState<boolean>(post.repGivenByMe ?? false);
+
+  // если с сервера пришли новые мета-поля (SSE/рефетч) — синхронизируем
+  useEffect(() => {
+    setLikesCount(post.likesCount ?? 0);
+    setLikedByMe(post.likedByMe ?? false);
+    setRepCount(post.repCount ?? 0);
+    setRepGivenByMe(post.repGivenByMe ?? false);
+  }, [post.likesCount, post.likedByMe, post.repCount, post.repGivenByMe]);
+
+  const canReact = !!currentUserId && !isMine && !!slug && !!index;
+
+
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(post.contentMd);
   const [busy, setBusy] = useState(false);
 
   // baseline = то, что пришло с сервера (последняя сохранённая версия поста)
   const baseline = useMemo(() => post.contentMd, [post.contentMd]);
-
-  // простой флаг HTML vs markdown (как и раньше)
-  const isHtml = baseline.trim().startsWith("<");
 
   // локальный драфт в localStorage — отдельный ключ под каждый пост
   const draftKey = useMemo(
@@ -326,6 +347,113 @@ export function ChapterPostItem(props: {
                 </>
               )}
             </div>
+          </div>
+        )}
+
+        {/* 👍 / ⭐ actions (only in view mode) */}
+        {!editing && (
+          <div className="mt-4 pt-1 flex items-center gap-4 text-xs text-neutral-400">
+ <button
+  type="button"
+  disabled={!canReact}
+  title={
+    !canReact
+      ? isMine
+        ? "You cannot react to your own post"
+        : "Login to react"
+      : likedByMe
+      ? "Remove like"
+      : "Like"
+  }
+  className={[
+    "inline-flex items-center gap-1 transition",
+    !canReact ? "opacity-40 cursor-not-allowed" : "hover:text-white",
+    likedByMe ? "text-emerald-400" : "text-neutral-400",
+  ].join(" ")}
+  onClick={async () => {
+    if (!canReact) return;
+
+    const nextLiked = !likedByMe;
+
+    // optimistic
+    setLikedByMe(nextLiked);
+    setLikesCount((c) => c + (nextLiked ? 1 : -1));
+
+    const res = await fetch(`/api/books/${slug}/${index}/posts/${post.id}/like`, {
+      method: nextLiked ? "POST" : "DELETE",
+      cache: "no-store",
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      // rollback
+      setLikedByMe(!nextLiked);
+      setLikesCount((c) => c + (nextLiked ? -1 : 1));
+      const msg = await res.text().catch(() => "");
+      alert(`Like failed (${res.status}) ${msg}`);
+      return;
+    }
+
+    const json = await res.json().catch(() => null);
+    if (json && typeof json.likesCount === "number") setLikesCount(json.likesCount);
+    if (json && typeof json.liked === "boolean") setLikedByMe(json.liked);
+  }}
+>
+  <ThumbsUp className="h-4 w-4" />
+  <span className="tabular-nums">{likesCount}</span>
+</button>
+
+<button
+  type="button"
+  disabled={!canReact || repGivenByMe}
+  title={
+    !canReact
+      ? isMine
+        ? "You cannot react to your own post"
+        : "Login to react"
+      : repGivenByMe
+      ? "Reputation already given"
+      : "Give reputation (+1)"
+  }
+  className={[
+    "inline-flex items-center gap-1 transition",
+    !canReact || repGivenByMe ? "opacity-40 cursor-not-allowed" : "hover:text-white",
+    repGivenByMe ? "text-yellow-300" : "text-neutral-400",
+  ].join(" ")}
+  onClick={async () => {
+    if (!canReact || repGivenByMe) return;
+
+    // optimistic (one-way)
+    setRepGivenByMe(true);
+    setRepCount((c) => c + 1);
+
+    const res = await fetch(
+      `/api/books/${slug}/${index}/posts/${post.id}/reputation`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ amount: 1 }),
+        cache: "no-store",
+        credentials: "include",
+      }
+    );
+
+    if (!res.ok) {
+      // rollback
+      setRepGivenByMe(false);
+      setRepCount((c) => c - 1);
+      const msg = await res.text().catch(() => "");
+      alert(`Reputation failed (${res.status}) ${msg}`);
+      return;
+    }
+
+    const json = await res.json().catch(() => null);
+    if (json && typeof json.repCount === "number") setRepCount(json.repCount);
+  }}
+>
+  <Star className="h-4 w-4" />
+  <span className="tabular-nums">{repCount}</span>
+</button>
           </div>
         )}
 

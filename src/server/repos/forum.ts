@@ -82,9 +82,11 @@ export async function createThread(params: {
   categorySlug: string;
   authorId: string;
   title: string;
-  content: string;
+  content?: string | null;
 }) {
-  const { categorySlug, authorId, title, content } = params;
+  const { categorySlug, authorId, title } = params;
+  const content = (params.content ?? "").trim();
+
   const cat = await prisma.forumCategory.findUnique({
     where: { slug: categorySlug },
     select: { id: true },
@@ -105,13 +107,17 @@ export async function createThread(params: {
           authorId,
           title,
           slug,
-          posts: {
-            create: {
-              authorId,
-              content: { type: "markdown", value: content },
-              markdown: content,
-            },
-          },
+          ...(content
+            ? {
+                posts: {
+                  create: {
+                    authorId,
+                    content: { type: "markdown", value: content },
+                    markdown: content,
+                  },
+                },
+              }
+            : {}),
         },
         select: { id: true, slug: true },
       });
@@ -122,3 +128,4 @@ export async function createThread(params: {
   }
   throw new Error("Cannot create thread");
 }
+

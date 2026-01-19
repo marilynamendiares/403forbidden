@@ -248,208 +248,222 @@ const followInitial =
         </div>
       </div>
 
-      {/* -- Chapters list -------------------------------------------------------- */}
-      <section>
-        <h2 className="text-lg font-medium mb-2">Chapters</h2>
-        <ul className="grid gap-3">
-          {chapters.length === 0 && <p className="opacity-60">No chapters yet.</p>}
+      {/* ===== Narrow body (Chapters + Create + Collaborators) =================== */}
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_360px] items-start">
+          {/* LEFT: Chapters + Create */}
+          <div className="space-y-6">
+            {/* -- Chapters list -------------------------------------------------------- */}
+            <section>
+              <h2 className="text-lg font-medium mb-2">Chapters</h2>
 
-          {chapters.map((c: any) => {
-            const isDraft = !c.publishedAt;
-            return (
-              <li
-                key={c.id}
-                className={
-                  "rounded-xl border p-4 " +
-                  (isDraft
-                    ? "border-neutral-800 bg-neutral-950/40 opacity-90"
-                    : "border-neutral-800")
-                }
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className={"text-sm " + (isDraft ? "opacity-50" : "opacity-70")}>
-                      #{c.index}
-                    </p>
-                    <Link
-                      href={`/books/${slug}/${c.index}`}
-                      className={
-                        "text-base font-medium hover:underline " +
-                        (isDraft ? "text-neutral-300" : "")
-                      }
-                    >
-                      {c.title}
-                    </Link>
-                  </div>
+              {/* keep current TOC width, but align to left edge */}
+              <div className="w-full max-w-xl">
+                <ul className="space-y-1">
+                  {chapters.length === 0 && (
+                    <p className="opacity-60">No chapters yet.</p>
+                  )}
 
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={
-                        "text-xs px-2 py-1 rounded border " +
-                        (isDraft
-                          ? "border-neutral-800 text-neutral-400"
-                          : "border-neutral-700")
-                      }
-                    >
-                      {isDraft ? "draft" : "published"}
-                    </span>
+                  {chapters.map((c: any) => {
+                    const isDraft = !c.publishedAt;
+                    const idx = String(c.index ?? 0).padStart(2, "0");
 
-                    {canEditBook && isDraft && (
-                      <form action={publishChapter}>
-                        <input type="hidden" name="index" value={c.index} />
-                        <button
-                          className="rounded-xl border border-neutral-700 px-3 py-2 text-xs hover:bg-emerald-50/10"
-                          title="Publish chapter"
+                    const postsCountRaw =
+                      (c._count?.posts as number | undefined) ??
+                      (c.postsCount as number | undefined) ??
+                      (c.postCount as number | undefined);
+
+                    const postsCount =
+                      typeof postsCountRaw === "number"
+                        ? String(postsCountRaw).padStart(2, "0")
+                        : "--";
+
+                    return (
+                      <li key={c.id}>
+                        <div
+                          className={[
+                            "flex items-baseline justify-between",
+                            "py-2",
+                            isDraft ? "text-neutral-500" : "text-white",
+                          ].join(" ")}
                         >
-                          Publish
-                        </button>
-                      </form>
+                          <div className="flex items-baseline gap-4 min-w-0 flex-1">
+                            <span className="w-10 font-mono text-xs tracking-[0.18em] tabular-nums opacity-80">
+                              {idx}
+                            </span>
+
+                            <Link
+                              href={`/books/${slug}/${c.index}`}
+                              className={[
+                                "min-w-0",
+                                "truncate",
+                                "text-base font-medium",
+                                "hover:underline",
+                                isDraft ? "hover:text-neutral-300" : "",
+                              ].join(" ")}
+                              title={c.title}
+                            >
+                              {c.title}
+                            </Link>
+                          </div>
+
+                          <span className="w-10 text-right font-mono text-xs tracking-[0.18em] tabular-nums opacity-70">
+                            {postsCount}
+                          </span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </section>
+
+            {/* -- Create chapter (only OWNER/EDITOR) ---------------------------------- */}
+            {canEditBook && (
+              <div className="w-full max-w-xl">
+                <CollapsibleSection label="Create chapter">
+                  <form action={create} className="space-y-2">
+                    <input
+                      name="title"
+                      placeholder="Title"
+                      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+                      required
+                    />
+                    <textarea
+                      name="content"
+                      placeholder="Markdown content…"
+                      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+                      rows={8}
+                      required
+                    />
+                    <label className="flex items-center gap-2 text-sm opacity-80">
+                      <input type="checkbox" name="publish" /> Publish immediately
+                    </label>
+                    <button className="rounded bg-white text-black px-4 py-2">
+                      Create
+                    </button>
+                    <p className="opacity-60 text-xs">Requires sign-in.</p>
+                  </form>
+                </CollapsibleSection>
+              </div>
+            )}
+          </div>
+
+          {/* RIGHT: Collaborators */}
+          <aside className="space-y-6">
+            <section className="border border-neutral-800 rounded-xl p-4 space-y-3">
+              <h2 className="text-lg font-medium">Collaborators</h2>
+
+              {!collabData ? (
+                <p className="opacity-60 text-sm">No access.</p>
+              ) : (
+                <>
+                  <ul className="grid gap-2">
+                    <li className="text-sm">
+                      <span className="opacity-70">Owner:</span>{" "}
+                      {collabData.owner?.profile?.displayName ??
+                        collabData.owner?.username ??
+                        collabData.owner?.email ??
+                        "owner"}
+                    </li>
+
+                    {collabData.collaborators.map((c) => (
+                      <li
+                        key={c.user.id}
+                        className="text-sm flex items-center gap-2"
+                      >
+                        <span className="opacity-80">
+                          {c.user.profile?.displayName ??
+                            c.user.username ??
+                            c.user.email}
+                        </span>
+                        <span className="px-2 py-0.5 text-xs rounded border border-neutral-700">
+                          {c.role.toLowerCase()}
+                        </span>
+
+                        <form
+                          action={async () => {
+                            "use server";
+                            const cookie = (await cookies()).toString();
+                            const h = await headers();
+                            const origin =
+                              h.get("origin") ??
+                              `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+                            await fetch(`${origin}/api/books/${slug}/collaborators`, {
+                              method: "DELETE",
+                              headers: { "content-type": "application/json", cookie },
+                              body: JSON.stringify({ userId: c.user.id }),
+                              cache: "no-store",
+                            });
+                            revalidatePath(`/books/${slug}`);
+                          }}
+                        >
+                          <button className="text-xs underline opacity-70 hover:opacity-100">
+                            Remove
+                          </button>
+                        </form>
+                      </li>
+                    ))}
+
+                    {collabData.collaborators.length === 0 && (
+                      <li className="opacity-60 text-sm">
+                        No collaborators yet.
+                      </li>
                     )}
-                  </div>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </section>
+                  </ul>
 
-      {/* -- Create chapter (only OWNER/EDITOR) ---------------------------------- */}
-      {canEditBook && (
-        <CollapsibleSection label="Create chapter">
-          <form action={create} className="space-y-2">
-            {/* заголовок больше не нужен — роль заголовка выполняет кнопка секции */}
-            <input
-              name="title"
-              placeholder="Title"
-              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-              required
-            />
-            <textarea
-              name="content"
-              placeholder="Markdown content…"
-              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-              rows={8}
-              required
-            />
-            <label className="flex items-center gap-2 text-sm opacity-80">
-              <input type="checkbox" name="publish" /> Publish immediately
-            </label>
-            <button className="rounded bg-white text-black px-4 py-2">
-              Create
-            </button>
-            <p className="opacity-60 text-xs">Requires sign-in.</p>
-          </form>
-        </CollapsibleSection>
-      )}
-
-
-
-      {/* -- Collaboration -------------------------------------------------------- */}
-      <section className="border border-neutral-800 rounded-xl p-4 space-y-3">
-        <h2 className="text-lg font-medium">Collaborators</h2>
-
-        {!collabData ? (
-          <p className="opacity-60 text-sm">No access.</p>
-        ) : (
-          <>
-            <ul className="grid gap-2">
-              <li className="text-sm">
-                <span className="opacity-70">Owner:</span>{" "}
-                {collabData.owner?.profile?.displayName ??
-                  collabData.owner?.username ??
-                  collabData.owner?.email ??
-                  "owner"}
-              </li>
-
-              {collabData.collaborators.map((c) => (
-                <li key={c.user.id} className="text-sm flex items-center gap-2">
-                  <span className="opacity-80">
-                    {c.user.profile?.displayName ??
-                      c.user.username ??
-                      c.user.email}
-                  </span>
-                  <span className="px-2 py-0.5 text-xs rounded border border-neutral-700">
-                    {c.role.toLowerCase()}
-                  </span>
-
-                  {/* Remove collaborator */}
                   <form
-                    action={async () => {
+                    action={async (fd: FormData) => {
                       "use server";
+                      const identifier = String(fd.get("identifier") || "");
+                      const role = String(fd.get("role") || "EDITOR");
                       const cookie = (await cookies()).toString();
                       const h = await headers();
                       const origin =
                         h.get("origin") ??
                         `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
                       await fetch(`${origin}/api/books/${slug}/collaborators`, {
-                        method: "DELETE",
+                        method: "POST",
                         headers: { "content-type": "application/json", cookie },
-                        body: JSON.stringify({ userId: c.user.id }),
+                        body: JSON.stringify({ identifier, role }),
                         cache: "no-store",
                       });
                       revalidatePath(`/books/${slug}`);
                     }}
+                    className="flex items-center gap-2 pt-2"
                   >
-                    <button className="text-xs underline opacity-70 hover:opacity-100">
-                      Remove
+                    <input
+                      name="identifier"
+                      placeholder="email or @username"
+                      className="w-full min-w-0 rounded bg-transparent border border-neutral-700 px-3 py-2 text-sm"
+                      required
+                    />
+                    <select
+                      name="role"
+                      className="rounded bg-transparent border border-neutral-700 px-2 py-2 text-sm"
+                      defaultValue="EDITOR"
+                    >
+                      <option value="EDITOR">Editor</option>
+                      <option value="VIEWER">Viewer</option>
+                    </select>
+                    <button className="rounded bg-white text-black px-3 py-2 text-sm">
+                      Add
                     </button>
                   </form>
-                </li>
-              ))}
-
-              {collabData.collaborators.length === 0 && (
-                <li className="opacity-60 text-sm">No collaborators yet.</li>
+                </>
               )}
-            </ul>
 
-            {/* Add collaborator */}
-            <form
-              action={async (fd: FormData) => {
-                "use server";
-                const identifier = String(fd.get("identifier") || "");
-                const role = String(fd.get("role") || "EDITOR");
-                const cookie = (await cookies()).toString();
-                const h = await headers();
-                const origin =
-                  h.get("origin") ??
-                  `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-                await fetch(`${origin}/api/books/${slug}/collaborators`, {
-                  method: "POST",
-                  headers: { "content-type": "application/json", cookie },
-                  body: JSON.stringify({ identifier, role }),
-                  cache: "no-store",
-                });
-                revalidatePath(`/books/${slug}`);
-              }}
-              className="flex items-center gap-2 pt-2"
-            >
-              <input
-                name="identifier"
-                placeholder="email or @username"
-                className="w-64 rounded bg-transparent border border-neutral-700 px-3 py-2 text-sm"
-                required
-              />
-              <select
-                name="role"
-                className="rounded bg-transparent border border-neutral-700 px-2 py-2 text-sm"
-                defaultValue="EDITOR"
-              >
-                <option value="EDITOR">Editor</option>
-                <option value="VIEWER">Viewer</option>
-              </select>
-              <button className="rounded bg-white text-black px-3 py-2 text-sm">Add</button>
-            </form>
-          </>
-        )}
+              <p className="opacity-60 text-xs">
+                Управление доступом доступно только владельцу книги.
+              </p>
+            </section>
+          </aside>
+        </div>
 
-        <p className="opacity-60 text-xs">
-          Управление доступом доступно только владельцу книги.
-        </p>
-      </section>
-
-      {/* ===== Realtime (SSE) — invisible subscriber for chapters list ============ */}
-      <ChaptersLiveClient slug={slug} />
-      {/* ===== End Realtime ====================================================== */}
+        {/* keep SSE subscriber (can stay anywhere on page) */}
+        <ChaptersLiveClient slug={slug} />
+      </div>
+      {/* ===== End narrow body =================================================== */}
     </div>
   );
 }

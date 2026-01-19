@@ -228,7 +228,7 @@ export default function ProfileSettingsPage() {
           <div>
             <label className="block text-sm font-medium mb-1">Bio</label>
             <textarea
-              className="w-full rounded-md border bg-transparent px-3 py-2 min-h-[120px]"
+              className="w-full rounded-md border bg-transparent px-3 py-2 min-h-30"
               value={bio}
               onChange={(e) => setBio(e.target.value)}
               maxLength={1000}

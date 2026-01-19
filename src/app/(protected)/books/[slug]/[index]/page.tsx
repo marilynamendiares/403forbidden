@@ -203,6 +203,20 @@ export default async function ChapterPage({
     canToggle = isOwner || role === "EDITOR";
   }
 
+  const REOPEN_COST = 10;
+
+let canAffordReopen = false;
+
+if (me && canToggle) {
+  const wallet = await prisma.wallet.findUnique({
+    where: { userId: me },
+    select: { eurodollars: true },
+  });
+
+  canAffordReopen = (wallet?.eurodollars ?? 0) >= REOPEN_COST;
+}
+
+
   // SSR: баннер блокировки
   const sLock = canEdit
     ? await redis.get<{ userId: string; username?: string; since: number }>(
@@ -218,6 +232,7 @@ export default async function ChapterPage({
     const origin =
       h.get("origin") ??
       `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
     const res = await fetch(
       `${origin}/api/books/${slug}/${chapter.index}/publish`,
       {
@@ -226,11 +241,46 @@ export default async function ChapterPage({
         cache: "no-store",
       }
     );
+
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Failed to publish (${res.status}): ${txt}`);
     }
+
+    // чтобы обновился и список глав, и сама страница
+    revalidatePath(`/books/${slug}`);
     revalidatePath(`/books/${slug}/${chapter.index}`);
+    redirect(`/books/${slug}/${chapter.index}`);
+  }
+
+  // ── Server Action: TOGGLE OPEN/CLOSE ───────────────────────────────────────
+  async function toggleChapterStatus() {
+    "use server";
+    const cookie = (await cookies()).toString();
+    const h = await headers();
+    const origin =
+      h.get("origin") ??
+      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
+    const endpoint = (chapter.status ?? "OPEN") === "OPEN" ? "close" : "open";
+
+    // ✅ Канонический API: по chapter.id
+    const res = await fetch(
+      `${origin}/api/books/${slug}/chapters/${chapter.id}/${endpoint}`,
+      {
+        method: "POST",
+        headers: { cookie },
+        cache: "no-store",
+      }
+    );
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Failed to toggle status (${res.status}): ${txt}`);
+    }
+
+    revalidatePath(`/books/${slug}/${chapter.index}`);
+    redirect(`/books/${slug}/${chapter.index}`);
   }
 
   // ── Server Action: DELETE ──────────────────────────────────────────────────
@@ -241,15 +291,18 @@ export default async function ChapterPage({
     const origin =
       h.get("origin") ??
       `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
     const res = await fetch(`${origin}/api/books/${slug}/${chapter.index}`, {
       method: "DELETE",
       headers: { cookie },
       cache: "no-store",
     });
+
     if (!res.ok) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Failed to delete (${res.status}): ${txt}`);
     }
+
     revalidatePath(`/books/${slug}`);
     redirect(`/books/${slug}`);
   }
@@ -319,16 +372,19 @@ export default async function ChapterPage({
           </p>
         </div>
 
-        <ChapterActionsMenu
-          canToggle={canToggle}
-          canEdit={canEdit}
-          isDraft={chapter.isDraft}
-          bookSlug={book.slug}
-          chapterId={chapter.id}
-          status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
-          publishAction={publishThisChapter}
-          deleteAction={deleteThisChapter}
-        />
+<ChapterActionsMenu
+  canToggle={canToggle}
+  canEdit={canEdit}
+  isDraft={chapter.isDraft}
+  status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
+
+  reopenCost={REOPEN_COST}
+  canAffordReopen={canAffordReopen}
+
+  toggleAction={toggleChapterStatus}
+  publishAction={publishThisChapter}
+  deleteAction={deleteThisChapter}
+/>
       </div>
 
       {/* Интро главы + inline-редактор */}

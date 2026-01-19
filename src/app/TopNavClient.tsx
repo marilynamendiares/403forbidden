@@ -13,7 +13,7 @@ type Item = {
 
 const ITEMS: Item[] = [
   { href: "/forum", label: "FORUM", num: "01" },
-  { href: "/archive", label: "ARCHIVE", num: "02" },
+  { href: "/world", label: "WORLD", num: "02" },
   { href: "/players", label: "PLAYERS", num: "03" },
   { href: "/books", label: "BOOKS", num: "04" },
 ];
@@ -32,7 +32,7 @@ export default function TopNavClient() {
   }, [pathname]);
 
   const linkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-  const navRef = useRef<HTMLElement | null>(null);
+  const navRef = useRef<HTMLDivElement | null>(null);
 
   const [indicator, setIndicator] = useState<{ left: number; width: number }>({
     left: 0,
@@ -86,8 +86,12 @@ export default function TopNavClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIdx]);
 
-  return (
-    <nav ref={navRef} className="relative flex items-center justify-center gap-6">
+return (
+  <nav className="flex items-center justify-center">
+    <div
+      ref={navRef}
+      className="relative inline-flex items-center justify-center gap-6"
+    >
       {ITEMS.map((it, idx) => {
         const active = idx === activeIdx;
 
@@ -106,8 +110,10 @@ export default function TopNavClient() {
         );
       })}
 
+      {/* baseline line: exactly under tab group width */}
       <div className="absolute left-0 right-0 -bottom-3 h-px bg-white/10" />
 
+      {/* active indicator: positioned relative to tab group */}
       {activeIdx >= 0 && (
         <div
           className="absolute -bottom-3 h-0.5 bg-white transition-[left,width] duration-200 ease-out"
@@ -117,6 +123,7 @@ export default function TopNavClient() {
           }}
         />
       )}
-    </nav>
-  );
+    </div>
+  </nav>
+);
 }

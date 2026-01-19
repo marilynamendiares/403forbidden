@@ -48,17 +48,16 @@ enum CharacterAppStatus {
   APPROVED
 }
 
-
 // ---------- Core ----------
 model User {
-  id             String    @id @default(cuid())
-  email          String    @unique
-  hashedPassword String?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
-  emailVerifiedAt  DateTime?
-  accounts       Account[]
-  sessions       Session[]
+  id                    String                 @id @default(cuid())
+  email                 String                 @unique
+  hashedPassword        String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  emailVerifiedAt       DateTime?
+  accounts              Account[]
+  sessions              Session[]
   characterApplications CharacterApplication[]
 
   // username в User (будет @unique, NOT NULL — зажмём в SQL ниже)
@@ -81,6 +80,13 @@ model User {
   chaptersAuthored Chapter[]      @relation("ChapterAuthor")
   BookFollow       BookFollow[]
   chapterPosts     ChapterPost[] // ← обратная связь из ChapterPost.author
+
+  // --- Economy / Shop / Reputation (MVP) ---
+  wallet                 Wallet?
+  inventory              InventoryItem[]
+  chapterPostLikes       ChapterPostLike[]
+  chapterPostRepGiven    ChapterPostReputationGrant[] @relation("RepFrom")
+  chapterPostRepReceived ChapterPostReputationGrant[] @relation("RepTo")
 }
 
 model Profile {
@@ -98,13 +104,13 @@ model Profile {
 }
 
 model CharacterApplication {
-  id        String            @id @default(cuid())
-  userId    String
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name      String
-  form      Json              // вся анкета (поля будем расширять без миграций)
-  status    CharacterAppStatus @default(DRAFT)
+  name   String
+  form   Json // вся анкета (поля будем расширять без миграций)
+  status CharacterAppStatus @default(DRAFT)
 
   // модерация (MVP)
   moderatorId   String?
@@ -118,7 +124,6 @@ model CharacterApplication {
   @@index([userId, status, updatedAt(sort: Desc)])
   @@index([status, updatedAt(sort: Desc)])
 }
-
 
 // ---------- Pages ----------
 model Page {
@@ -180,6 +185,9 @@ model Chapter {
   // NEW: открыта/закрыта для постинга
   status ChapterStatus @default(OPEN)
 
+  // NEW: один раз завершена (для награды/платного re-open)
+  completedAt DateTime?
+
   // NEW: дата последнего поста (для сортировки/списков)
   lastPostAt DateTime?
 
@@ -188,6 +196,7 @@ model Chapter {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  
 
   // NEW: посты внутри главы (append-only поток)
   posts ChapterPost[]
@@ -215,33 +224,37 @@ model ChapterPost {
   createdAt   DateTime  @default(now())
   editedAt    DateTime?
 
+  // --- MVP: likes + reputation under this post ---
+  likes            ChapterPostLike[]
+  reputationGrants ChapterPostReputationGrant[]
+
   @@index([chapterId, createdAt, id]) // стабильный курсор (createdAt,id)
   @@index([authorId])
 }
 
 // ---------- Forum ----------
 enum ForumReadVisibility {
-  PUBLIC   // guests can read
-  MEMBERS  // any logged-in user (restricted + player)
-  PLAYERS  // only players (approved character)
+  PUBLIC // guests can read
+  MEMBERS // any logged-in user (restricted + player)
+  PLAYERS // only players (approved character)
 }
 
 enum ForumWriteVisibility {
-  MEMBERS  // logged-in can create posts
-  PLAYERS  // only players can create posts
-  ADMIN    // only admins can create posts
+  MEMBERS // logged-in can create posts
+  PLAYERS // only players can create posts
+  ADMIN // only admins can create posts
 }
 
 model ForumCategory {
-  id      String        @id @default(cuid())
-  slug    String        @unique
-  title   String
-  desc    String?
+  id    String  @id @default(cuid())
+  slug  String  @unique
+  title String
+  desc  String?
 
   // ✅ ACL flags (DB-driven)
-  readVisibility        ForumReadVisibility  @default(MEMBERS)
+  readVisibility         ForumReadVisibility  @default(MEMBERS)
   createThreadVisibility ForumWriteVisibility @default(PLAYERS)
-  createPostVisibility  ForumWriteVisibility @default(MEMBERS)
+  createPostVisibility   ForumWriteVisibility @default(MEMBERS)
 
   threads ForumThread[]
 }
@@ -492,7 +505,6 @@ model AuthCode {
   @@index([email, purpose, expiresAt])
 }
 
-
 model Notification {
   id         String   @id @default(cuid())
   userId     String
@@ -540,4 +552,83 @@ model BookFollow {
 
   @@unique([userId, bookId])
   @@index([bookId, createdAt])
+}
+
+// ---------- Economy / Shop / Reputation (MVP) ----------
+model Wallet {
+  userId String @id
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // €$
+  eurodollars Int @default(0)
+
+  // Reputation (накопительная)
+  reputationTotal Int @default(0)
+
+  // Budget to GIVE reputation (weekly)
+  reputationBudget        Int       @default(10)
+  reputationBudgetMax     Int       @default(10)
+  reputationBudgetResetAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ShopItem {
+  id                 String  @id @default(cuid())
+  slug               String  @unique
+  title              String
+  description        String?
+  category           String // "CYBERWARE" | "CYBERDECKS" | ...
+  priceEurodollars   Int     @default(0)
+  requiredReputation Int     @default(0)
+  isActive           Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventory InventoryItem[]
+}
+
+model InventoryItem {
+  id        String   @id @default(cuid())
+  userId    String
+  itemId    String
+  createdAt DateTime @default(now())
+
+  user User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item ShopItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId])
+  @@index([userId, createdAt(sort: Desc)])
+}
+
+model ChapterPostLike {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post ChapterPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId, createdAt(sort: Desc)])
+}
+
+model ChapterPostReputationGrant {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  postId     String
+  amount     Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  fromUser User        @relation("RepFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User        @relation("RepTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  post     ChapterPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // нельзя дать репутацию одному и тому же посту больше 1 раза
+  @@unique([fromUserId, postId])
+  @@index([toUserId, createdAt(sort: Desc)])
 }

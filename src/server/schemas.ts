@@ -7,8 +7,8 @@ export const CreateCategory = z.object({
 });
 
 export const CreateThread = z.object({
-  title: z.string().trim().min(2).max(140),
-  content: z.string().trim().min(1).max(20_000),
+  title: z.string().trim().min(1),
+  content: z.string().trim().optional(),
 });
 
 export const CreateChapterPost = z.object({
