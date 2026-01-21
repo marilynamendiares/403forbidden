@@ -227,3 +227,35 @@ body {
 .ui-icon-button-glass:disabled {
   @apply opacity-40 cursor-not-allowed;
 }
+
+.globe3d-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 900px;
+}
+
+.globe3d {
+  width: 100%;
+  height: 100%;
+  /* the actual tilt like your reference */
+  transform: rotateX(18deg) rotateZ(-14deg);
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 0 14px rgba(255,255,255,0.10));
+}
+
+/* Animate only meridians (dash offset) — looks like a rotating wireframe sphere */
+.globe-meridian {
+  animation: globe-meridian-scroll var(--globe-speed, 14s) linear infinite;
+}
+
+@keyframes globe-meridian-scroll {
+  from { stroke-dashoffset: 0; }
+  to   { stroke-dashoffset: -120; }
+}
+
+/* Optional: slightly different motion speed for depth (every other meridian) */
+.globe-meridians .globe-meridian:nth-child(2n) {
+  animation-duration: calc(var(--globe-speed, 14s) * 1.25);
+  opacity: 0.85;
+}

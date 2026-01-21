@@ -82,7 +82,7 @@ export default async function PublicProfilePage({ params }: Params) {
   const bio = user.profile?.bio || "";
 
   return (
-    <div className="mx-auto max-w-5xl py-8 space-y-6 px-4">
+    <div className="py-8 space-y-6">
       {/* HERO (2-row layout: top aligns by avatar only; stats are separate row) */}
       <section className="grid grid-cols-12 gap-6">
         {/* ── TOP ROW ───────────────────────────────────────────── */}

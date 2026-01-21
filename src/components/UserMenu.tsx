@@ -117,42 +117,48 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
 
   return (
     <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-1.5 hover:bg-white/10"
-        aria-haspopup="menu"
-        aria-expanded={open}
-      >
-        <span className="relative inline-block">
-          {/* аватар */}
-          <span className="block h-7 w-7 overflow-hidden rounded-full bg-neutral-800 border border-neutral-700">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={avatarUrl || "/default-avatar.svg"}
-              alt=""
-              className="h-full w-full object-cover"
-            />
-          </span>
+<button
+  onClick={() => setOpen((v) => !v)}
+  className={[
+    "relative",
+    "h-10 w-10",
+    "rounded-none",
+    "bg-white/5 hover:bg-white/10",
+    "border border-white/10",
+    "outline-none",
+    "focus-visible:ring-2 focus-visible:ring-white/25",
+  ].join(" ")}
+  aria-haspopup="menu"
+  aria-expanded={open}
+  aria-label="Open user menu"
+>
+  {/* КЛИП ДЛЯ КАРТИНКИ — внутри, чтобы бейдж не обрезался */}
+  <span className="block h-full w-full overflow-hidden rounded-none">
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img
+      src={avatarUrl || "/default-avatar.svg"}
+      alt=""
+      className="h-full w-full object-cover"
+    />
+  </span>
 
-          {/* бейдж уведомлений поверх */}
-          {notifCount > 0 && (
-            <span
-              className="
-                absolute -top-1.5 -right-1.5 z-20
-                inline-flex h-4 min-w-4 items-center justify-center
-                rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white
-                shadow-md
-              "
-              aria-label={`${notifCount} unread notifications`}
-              title={`${notifCount} unread notifications`}
-            >
-              {notifCount > 99 ? "99+" : notifCount}
-            </span>
-          )}
-        </span>
+  {notifCount > 0 && (
+    <span
+      className="
+        absolute -top-2 -right-2 z-20
+        inline-flex h-5 min-w-5 items-center justify-center
+        rounded-full bg-red-500 px-1 text-[11px] font-semibold leading-none text-white
+        shadow-md
+      "
+      aria-label={`${notifCount} unread notifications`}
+      title={`${notifCount} unread notifications`}
+    >
+      {notifCount > 99 ? "99+" : notifCount}
+    </span>
+  )}
+</button>
 
-        <span className="text-sm opacity-90">@{username}</span>
-      </button>
+
 
       {open && (
         <div

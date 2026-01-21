@@ -1,4 +1,4 @@
-import Link from "next/link";
+import BackButton from "@/components/BackButton";
 
 export const dynamic = "force-dynamic";
 
@@ -13,18 +13,18 @@ function ArchivePlaceholder({
   title,
   subtitle,
   tag = "ARCHIVE",
-  backHref = "/archive",
+  backHref = "/world",
 }: ArchivePageProps) {
   return (
     <div className="space-y-8">
       {/* header */}
       <div className="space-y-2">
-        <Link
-          href={backHref}
-          className="text-sm opacity-60 hover:opacity-100 transition"
-        >
-          ← Back
-        </Link>
+<BackButton
+  fallbackHref={backHref}
+  className="text-sm opacity-60 hover:opacity-100 transition"
+  label="← Back"
+/>
+
 
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold tracking-tight">
@@ -67,10 +67,10 @@ function ArchivePlaceholder({
 export default function Page() {
   return (
     <ArchivePlaceholder
-      title="Timeline"
+      title="Lore"
       subtitle="Canonical texts, fragments, and narrative background."
       tag="WORLD"
-      backHref="/archive/world"
+      backHref="/world"
     />
   );
 }

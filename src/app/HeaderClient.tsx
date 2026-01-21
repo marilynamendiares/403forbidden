@@ -173,9 +173,9 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
 
 
 return (
-  <div className="min-w-36 flex justify-end">
+  <div className="flex justify-end pt-3">
     {shouldShowSkeleton ? (
-      <div className="h-8 w-36 rounded bg-neutral-900/50 animate-pulse" />
+      <div className="h-10 w-10 bg-neutral-900/50 animate-pulse" />
     ) : status === "authenticated" && me ? (
       <UserMenu username={me.username} avatarUrl={me.avatarUrl} notifCount={unread} />
     ) : (
@@ -188,5 +188,4 @@ return (
     )}
   </div>
 );
-
 }

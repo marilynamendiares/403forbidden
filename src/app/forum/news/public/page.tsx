@@ -1,11 +1,11 @@
-import Link from "next/link";
+import BackButton from "@/components/BackButton";
 export const dynamic = "force-dynamic";
 
 export default function NewsPublic() {
   return (
     <div className="space-y-6">
       <div>
-        <Link className="text-sm opacity-70 hover:underline" href="/archive/news">← Back</Link>
+        <BackButton fallbackHref="/forum/news" />
         <h1 className="text-2xl font-semibold mt-2">Announcements (Public)</h1>
         <p className="text-sm opacity-70 mt-1">Read-only channel.</p>
       </div>
