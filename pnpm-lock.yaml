@@ -35,6 +35,9 @@ importers:
       '@tiptap/extension-text-align':
         specifier: ^3.11.1
         version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))
+      '@tiptap/extension-underline':
+        specifier: ^3.18.0
+        version: 3.18.0(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))
       '@tiptap/react':
         specifier: ^3.10.7
         version: 3.18.0(@floating-ui/dom@1.7.5)(@tiptap/core@3.18.0(@tiptap/pm@3.18.0))(@tiptap/pm@3.18.0)(@types/react-dom@19.2.3(@types/react@19.2.10))(@types/react@19.2.10)(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
