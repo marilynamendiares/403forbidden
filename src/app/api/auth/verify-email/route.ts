@@ -36,7 +36,7 @@ export async function POST(req: Request) {
 
   if (!ok) return NextResponse.json({ error: "invalid_code" }, { status: 400 });
 
-  await prisma.$transaction(async (tx) => {
+    await prisma.$transaction(async (tx: typeof prisma) => {
     await tx.user.update({ where: { email }, data: { emailVerifiedAt: new Date() } });
     await tx.authCode.delete({ where: { email_purpose: { email, purpose: "EMAIL_VERIFY" } } });
   });

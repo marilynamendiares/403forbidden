@@ -1,6 +1,13 @@
 // src/server/notify/queue.ts
 import { prisma } from "@/server/db";
-import { Prisma } from "@prisma/client"; // ← важный импорт для типов JSON
+type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json }
+  | Json[];
+
 import type { NotificationEvent } from "./types";
 import { emitNotifyUser } from "./emit";
 
@@ -20,12 +27,12 @@ export async function queueEvent(evt: NotificationEvent) {
       kind,
       entityType,
       entityId,
-      payload: (evt as unknown) as Prisma.InputJsonValue,
+      payload: (evt as unknown) as Json,
       status: "pending",
     },
     update: {
       // не создаём дубль; просто обновим payload (на случай если поменялся)
-      payload: (evt as unknown) as Prisma.InputJsonValue,
+      payload: (evt as unknown) as Json,
       // статус НЕ трогаем, чтобы не реанимировать done → pending
     },
   });
@@ -50,7 +57,7 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
     select: { id: true },
   });
 
-  const ids = candidates.map((x) => x.id);
+  const ids = candidates.map((x: { id: string }) => x.id);
   if (ids.length === 0) {
     return { polled: 0, created: 0, errors: 0 };
   }
@@ -93,16 +100,21 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
       }
 
       // Создаём уведомления батчом
-      const notifs = await prisma.$transaction(
-        evt.recipients.map((userId) =>
-          prisma.notification.create({
+      const recipients = (evt.recipients ?? []) as string[];
+
+      const notifs = await prisma.$transaction((tx: typeof prisma) =>
+        Promise.all(
+          recipients.map((userId: string) =>
+            tx.notification.create({
+
+
             data: {
               userId,
               type: evt.kind,
               actorId: evt.actorId ?? null,
               targetType: evt.target.type,
               targetId: evt.target.id,
-              payload: ((evt.payload ?? {}) as unknown) as Prisma.InputJsonValue, // ← JSON
+              payload: ((evt.payload ?? {}) as unknown) as Json,
             },
             // Явно выбираем поля, которые дальше используем
             select: {
@@ -116,13 +128,14 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
             },
           })
         )
+      )
       );
 
       created += notifs.length;
 
       // SSE-пуш (лёгкая форма)
       await Promise.all(
-        notifs.map((n) =>
+        notifs.map((n: (typeof notifs)[number]) =>
           emitNotifyUser(n.userId, {
             id: n.id,
             type: n.type,
@@ -133,6 +146,7 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
           })
         )
       );
+
 
       await prisma.outboxEvent.update({
         where: { id: item.id },
