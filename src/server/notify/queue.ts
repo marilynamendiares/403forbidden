@@ -8,16 +8,30 @@ import { emitNotifyUser } from "./emit";
  * Поставить событие в outbox.
  */
 export async function queueEvent(evt: NotificationEvent) {
-  await prisma.outboxEvent.create({
-    data: {
-      kind: evt.kind,
-      entityType: evt.target.type,
-      entityId: evt.target.id,
-      payload: (evt as unknown) as Prisma.InputJsonValue, // ← строго приводим к JSON-типу Prisma
+  const kind = evt.kind;
+  const entityType = evt.target.type;
+  const entityId = evt.target.id;
+
+  await prisma.outboxEvent.upsert({
+    where: {
+      kind_entityType_entityId: { kind, entityType, entityId },
+    },
+    create: {
+      kind,
+      entityType,
+      entityId,
+      payload: (evt as unknown) as Prisma.InputJsonValue,
       status: "pending",
+    },
+    update: {
+      // не создаём дубль; просто обновим payload (на случай если поменялся)
+      payload: (evt as unknown) as Prisma.InputJsonValue,
+      // статус НЕ трогаем, чтобы не реанимировать done → pending
     },
   });
 }
+
+
 
 /**
  * Дренаж outbox: формирует Notification и пушит через SSE.
@@ -25,11 +39,42 @@ export async function queueEvent(evt: NotificationEvent) {
 export async function drainOutbox(opts: { limit?: number } = {}) {
   const limit = opts.limit ?? 100;
 
-  const items = await prisma.outboxEvent.findMany({
+  const workerId = `drain:${process.pid}:${Math.random().toString(16).slice(2)}`;
+  const now = new Date();
+
+  // 1) Берём кандидатов (ids)
+  const candidates = await prisma.outboxEvent.findMany({
     where: { status: "pending" },
     orderBy: { createdAt: "asc" },
     take: limit,
+    select: { id: true },
   });
+
+  const ids = candidates.map((x) => x.id);
+  if (ids.length === 0) {
+    return { polled: 0, created: 0, errors: 0 };
+  }
+
+  // 2) Atomically CLAIM: кто успел — тот забрал
+  await prisma.outboxEvent.updateMany({
+    where: {
+      id: { in: ids },
+      status: "pending",
+    },
+    data: {
+      status: "processing",
+      claimedAt: now,
+      claimedBy: workerId,
+    },
+  });
+
+  // 3) Читаем только то, что реально заклеймили мы
+  const items = await prisma.outboxEvent.findMany({
+    where: { id: { in: ids }, status: "processing", claimedBy: workerId },
+    orderBy: { createdAt: "asc" },
+    take: limit,
+  });
+
 
   let created = 0;
   let errors = 0;
@@ -40,10 +85,10 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
 
       // Пустые события пропускаем
       if (!evt || !evt.recipients?.length) {
-        await prisma.outboxEvent.update({
-          where: { id: item.id },
-          data: { status: "done" },
-        });
+      await prisma.outboxEvent.update({
+        where: { id: item.id },
+        data: { status: "done" },
+      });
         continue;
       }
 

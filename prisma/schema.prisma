@@ -16,6 +16,12 @@ enum BookStatus {
   HIATUS
 }
 
+enum UserStatus {
+  ACTIVE
+  BANNED
+  DELETED
+}
+
 // +++ NEW: статус главы
 enum ChapterStatus {
   OPEN
@@ -56,6 +62,11 @@ model User {
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   emailVerifiedAt       DateTime?
+  lastSeenAt            DateTime?
+
+  status                UserStatus @default(ACTIVE)
+  deletedAt             DateTime?
+
   accounts              Account[]
   sessions              Session[]
   characterApplications CharacterApplication[]
@@ -87,6 +98,9 @@ model User {
   chapterPostLikes       ChapterPostLike[]
   chapterPostRepGiven    ChapterPostReputationGrant[] @relation("RepFrom")
   chapterPostRepReceived ChapterPostReputationGrant[] @relation("RepTo")
+
+  @@index([lastSeenAt(sort: Desc)])
+  @@index([status, deletedAt])
 }
 
 model Profile {
@@ -539,7 +553,16 @@ model OutboxEvent {
   payload    Json?
   status     String   @default("pending")
   createdAt  DateTime @default(now())
+
+  claimedAt  DateTime?
+  claimedBy  String?
+
+  @@unique([kind, entityType, entityId])
+  @@index([status, createdAt])
+  @@index([status, claimedAt])
 }
+
+
 
 model BookFollow {
   id        String   @id @default(cuid())

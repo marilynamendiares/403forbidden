@@ -26,13 +26,22 @@ type FeedResponse = {
   nextCursor: string | null;
 };
 
-export function useNotificationsFeed(limit = 5) {
+export function useNotificationsFeed(limit = 5, enabled = true) {
+  const key = enabled ? `/api/notifications?limit=${limit}` : null;
+
   const { data, error, isLoading, mutate } = useSWR<FeedResponse>(
-    `/api/notifications?limit=${limit}`,
+    key,
     fetcher,
     {
       revalidateOnFocus: false,
-      dedupingInterval: 4000,
+      revalidateOnReconnect: false,
+
+      // 4 секунды — слишком агрессивно. Делаем “спокойно”.
+      dedupingInterval: 30_000,
+
+      // не перезапрашивать “просто потому что старое”
+      revalidateIfStale: false,
+      keepPreviousData: true,
     }
   );
 

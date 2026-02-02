@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────
+   Local fonts (served from /public/fonts/*)
+   ───────────────────────────────────────────── */
+
+/* Osiris */
+@font-face {
+  font-family: "Osiris";
+  src: url("/fonts/osiris/Osiris.woff2") format("woff2"),
+       url("/fonts/osiris/Osiris.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Archimoto */
+@font-face {
+  font-family: "Archimoto";
+  src: url("/fonts/archimoto/ArchimotoV01-Thin.otf") format("opentype");
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archimoto";
+  src: url("/fonts/archimoto/ArchimotoV01-Regular.otf") format("opentype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archimoto";
+  src: url("/fonts/archimoto/ArchimotoV01-Medium.otf") format("opentype");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Archimoto";
+  src: url("/fonts/archimoto/ArchimotoV01-Black.otf") format("opentype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* hard theme: always dark */
+  --background: #1E1E1E;
+  --foreground: #D9D9D9;
+
+  /* optional explicit pure white token (use when you REALLY need #fff) */
+  --white: #FFFFFF;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* map tokens to actual @font-face families */
+  --font-osiris: "Osiris";
+  --font-archimoto: "Archimoto";
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* hard, no-tailwind, no-var test: forces font-family */
+.header-font-archimoto {
+  font-family: "Archimoto", var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
+
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }

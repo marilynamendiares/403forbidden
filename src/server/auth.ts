@@ -39,20 +39,23 @@ export const authOptions: NextAuthOptions = {
             id: true,
             email: true,
             username: true, // ← ВАЖНО: username берём из User
-          hashedPassword: true,
-          emailVerifiedAt: true,
-          profile: { select: { displayName: true, avatarUrl: true } },
-
+            hashedPassword: true,
+            emailVerifiedAt: true,
+            status: true,
+            profile: { select: { displayName: true, avatarUrl: true } },
           },
+
         });
         if (!user || !user.hashedPassword) return null;
 
         const ok = await bcrypt.compare(parsed.data.password, user.hashedPassword);
         if (!ok) return null;
 
-                // запрет логина до подтверждения email
+        // запрет логина до подтверждения email
         if (!user.emailVerifiedAt) return null;
 
+        // soft-delete / banned: запрещаем логин
+        if (user.status !== "ACTIVE") return null;
 
         // Прокидываем витринные поля; username положим в user (заберём в jwt)
         return {
@@ -75,9 +78,34 @@ export const authOptions: NextAuthOptions = {
         token.username = (user as any).username ?? null;
         token.displayName = (user as any).name ?? null;
         token.avatarUrl = (user as any).image ?? null;
+
+        // mark as freshly validated
+        (token as any).userStatus = "ACTIVE";
+        (token as any).statusCheckedAt = Date.now();
+        return token;
       }
+
+      // Periodic status re-check (no spam): once per 10 minutes
+      const lastCheck = (token as any).statusCheckedAt as number | undefined;
+      const shouldCheck = !lastCheck || Date.now() - lastCheck > 10 * 60 * 1000;
+
+      if (shouldCheck) {
+        const uid =
+          (token?.sub as string | undefined) ?? ((token as any).uid as string | undefined);
+        if (uid) {
+          const u = await prisma.user.findUnique({
+            where: { id: uid },
+            select: { status: true },
+          });
+
+          (token as any).userStatus = u?.status ?? "DELETED";
+          (token as any).statusCheckedAt = Date.now();
+        }
+      }
+
       return token;
     },
+
 
     async session({ session, token }) {
       // гарантируем объект user
@@ -96,6 +124,10 @@ export const authOptions: NextAuthOptions = {
       session.user.name =
         ((token as any).displayName as string | null) ?? session.user.name ?? null;
       session.user.image = ((token as any).avatarUrl as string | null) ?? session.user.image ?? null;
+
+      // If user was soft-deleted/banned after login, drop session
+      const st = (token as any).userStatus as string | undefined;
+      if (st && st !== "ACTIVE") return null as any;
 
       return session;
     },

@@ -101,14 +101,18 @@ export function useEventStream(handlers: HandlerMap, opts: UseEventStreamOptions
 
     // именованные события
 const attached: Array<{ name: string; fn: EventListener }> = [];
+
 for (const name of eventNames) {
-  const fn = (e: MessageEvent) => {
+  const listener: EventListener = (evt) => {
+    const e = evt as MessageEvent;
     const data = safeParseJSON(e.data);
     handlersRef.current[name]?.(data);
   };
-  es.addEventListener(name, fn);
-  attached.push({ name, fn });
+
+  es.addEventListener(name, listener);
+  attached.push({ name, fn: listener });
 }
+
 
 
     es.onopen = () => optsRef.current.onOpen?.();

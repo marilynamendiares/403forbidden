@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import UserMenu from "@/components/UserMenu";
 import { useEventStream } from "@/hooks/useEventStream";
+import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
 type MeProfile = { username: string; avatarUrl: string | null };
 
@@ -17,7 +18,15 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
 
   const [me, setMe] = useState<MeProfile | null>(null);
   const [hydrated, setHydrated] = useState(false);
-  const [unread, setUnread] = useState<number>(0);
+  const { count: unread, setLocal, incLocal, decLocal, sync } = useUnreadNotifications();
+
+  // На логине делаем один sync, дальше живём от SSE + редкий refreshInterval из хука
+  useEffect(() => {
+    if (!hydrated || status !== "authenticated") return;
+    sync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, status]);
+
 
   // стабильная верстка между SSR/CSR
   useEffect(() => setHydrated(true), []);
@@ -60,38 +69,6 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
     };
   }, [hydrated, status]);
 
-
-  // helper: подтянуть актуальный счётчик непрочитанных
-  const refetchUnread = async () => {
-    try {
-      const r = await fetch("/api/notifications?unread=1", { cache: "no-store" });
-      if (!r.ok) return;
-      const data = (await r.json()) as { count?: number };
-      if (typeof data.count === "number") setUnread(data.count);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  // первичная загрузка + на смену маршрута
-  useEffect(() => {
-    if (!hydrated || status !== "authenticated") return;
-    refetchUnread();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated, status, pathname]);
-
-  // при возвращении фокуса/вкладки — тоже актуализируем
-  useEffect(() => {
-    if (!hydrated || status !== "authenticated") return;
-    const onFocus = () => refetchUnread();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onFocus);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onFocus);
-    };
-  }, [hydrated, status]);
-
   // SSE
   useEventStream(
     sseEventName
@@ -100,24 +77,22 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
             const t: string | undefined =
               msg?.type || msg?.event || msg?.topic || msg?.name;
 
-            if (
-              t === "chapter.published" ||
-              t === "chapter:new_post" ||
-              (typeof t === "string" &&
-                (t.startsWith("notification:") || t.startsWith("notify:")))
-            ) {
-              setUnread((x) => x + 1);
+            // Увеличиваем только на реальных notification-событиях
+            if (typeof t === "string" && (t.startsWith("notification:") || t.startsWith("notify:"))) {
+              incLocal(1);
               return;
             }
 
             if (t === "notifications:read_all") {
-              setUnread(0);
+              setLocal(0);
               return;
             }
+
             if (t === "notification:read_one" || t === "notification:mark_read") {
-              setUnread((x) => Math.max(0, x - 1));
+              decLocal(1);
               return;
             }
+
           },
         }
       : {}
@@ -135,16 +110,16 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
 
       switch (detail.op) {
         case "set":
-          setUnread(Math.max(0, Number(detail.count ?? 0)));
+          setLocal(Number(detail.count ?? 0));
           break;
         case "inc":
-          setUnread((x) => x + Number(detail.delta ?? 1));
+          incLocal(Number(detail.delta ?? 1));
           break;
         case "dec":
-          setUnread((x) => Math.max(0, x - Number(detail.delta ?? 1)));
+          decLocal(Number(detail.delta ?? 1));
           break;
         case "clear":
-          setUnread(0);
+          setLocal(0);
           break;
       }
     };

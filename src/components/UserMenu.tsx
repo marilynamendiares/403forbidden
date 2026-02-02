@@ -35,7 +35,7 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
     loading: notifLoading,
     refresh: refreshNotifFeed,
     hasMore,
-  } = useNotificationsFeed(5);
+    } = useNotificationsFeed(5, open);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -46,12 +46,19 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
     return () => document.removeEventListener("mousedown", onDocClick);
   }, []);
 
-  // при открытии меню подтягиваем свежий список
+  // при открытии меню подтягиваем список, но не чаще чем раз в 60с
+  const lastFeedSyncRef = useRef(0);
+
   useEffect(() => {
-    if (open) {
-      refreshNotifFeed();
-    }
+    if (!open) return;
+
+    const now = Date.now();
+    if (now - lastFeedSyncRef.current < 60_000) return;
+
+    lastFeedSyncRef.current = now;
+    refreshNotifFeed();
   }, [open, refreshNotifFeed]);
+
 
   // ЛОКАЛЬНАЯ синхронизация бейджа и фида из /notifications (mark read / mark all)
   useEffect(() => {

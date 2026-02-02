@@ -18,9 +18,9 @@ export default async function ProfilePage() {
     where: { id: userId },
     select: {
       email: true,
+      username: true, // <-- username принадлежит User, не Profile
       profile: {
         select: {
-          username: true,
           displayName: true,
           bio: true,
           avatarUrl: true,
@@ -29,6 +29,7 @@ export default async function ProfilePage() {
       },
     },
   });
+
 
   if (!user) redirect("/login?next=/profile");
 

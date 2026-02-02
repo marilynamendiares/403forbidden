@@ -1,34 +1,41 @@
 "use client";
 
-import useSWR from "swr";
-import { useEventStream } from "@/hooks/useEventStream"; // ← твой хук
 import { useEffect } from "react";
-
-const fetcher = (u: string) => fetch(u).then(r => r.json());
+import { useEventStream } from "@/hooks/useEventStream";
+import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
 export default function NotificationBell(props: { sseEventName?: string; className?: string }) {
-const { data, mutate } = useSWR<{ count: number }>(
-  "/api/notifications?unread=1",
-  fetcher,
-  { refreshInterval: 20000 }
-);
+  const { count, incLocal, decLocal, setLocal, sync } = useUnreadNotifications();
 
-
-  // SSE: как только придёт событие notify:user:<id> — обновляем счётчик
+  // SSE: обновляем локально (без сети) + изредка можно делать sync при reconnect/event если хочешь
   useEventStream(
     props.sseEventName
-      ? { [props.sseEventName]: () => mutate() }
-      : { message: () => mutate() } // fallback, если вдруг шлёшь в default 'message'
+      ? {
+          [props.sseEventName]: (msg: any) => {
+            const t: string | undefined = msg?.type || msg?.event || msg?.topic || msg?.name;
+            if (typeof t === "string" && (t.startsWith("notification:") || t.startsWith("notify:"))) {
+              incLocal(1);
+            }
+            if (t === "notifications:read_all") setLocal(0);
+            if (t === "notification:read_one" || t === "notification:mark_read") decLocal(1);
+          },
+        }
+      : {}
   );
 
-  // На фокус вкладки тоже обновим
+  // Если вкладка вернулась после долгого сна — один sync (без постоянного focus-spam)
   useEffect(() => {
-    const h = () => mutate();
-    window.addEventListener("focus", h);
-    return () => window.removeEventListener("focus", h);
-  }, [mutate]);
-
-  const count = data?.count ?? 0;
+    let last = 0;
+    const onVis = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - last < 30_000) return; // cooldown 30s
+      last = now;
+      sync();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [sync]);
 
   return (
     <button

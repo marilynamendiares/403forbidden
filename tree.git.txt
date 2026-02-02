@@ -8,6 +8,7 @@ eslint.config.mjs
 next.config.ts
 package-lock.json
 package.json
+pnpm-lock.yaml
 postcss.config.mjs
 prisma/migrations/20251021112034_init/migration.sql
 prisma/migrations/20251021113815_nextauth_relations/migration.sql
@@ -128,6 +129,10 @@ src/app/favicon.ico
 src/app/forgot-password/page.tsx
 src/app/forum/[category]/[slug]/page.tsx
 src/app/forum/[category]/page.tsx
+src/app/forum/news/devlog/page.tsx
+src/app/forum/news/page.tsx
+src/app/forum/news/players/page.tsx
+src/app/forum/news/public/page.tsx
 src/app/forum/page.tsx
 src/app/globals.css
 src/app/layout.tsx
@@ -145,10 +150,10 @@ src/app/signup/page.tsx
 src/app/u/[username]/inventory/page.tsx
 src/app/u/[username]/page.tsx
 src/app/verify-email/page.tsx
-src/app/world/news/devlog/page.tsx
-src/app/world/news/page.tsx
-src/app/world/news/players/page.tsx
-src/app/world/news/public/page.tsx
+src/app/world/factions/page.tsx
+src/app/world/locations/page.tsx
+src/app/world/lore/page.tsx
+src/app/world/map/page.tsx
 src/app/world/page.tsx
 src/app/world/shop/page.tsx
 src/app/world/shop/shop-client.tsx
@@ -156,12 +161,8 @@ src/app/world/systems/faq/page.tsx
 src/app/world/systems/mechanics/page.tsx
 src/app/world/systems/page.tsx
 src/app/world/systems/rules/page.tsx
-src/app/world/world/factions/page.tsx
-src/app/world/world/locations/page.tsx
-src/app/world/world/lore/page.tsx
-src/app/world/world/map/page.tsx
-src/app/world/world/page.tsx
-src/app/world/world/timeline/page.tsx
+src/app/world/timeline/page.tsx
+src/components/BackButton.tsx
 src/components/BooksLiveClient.tsx
 src/components/ChapterEditorClient.tsx
 src/components/ChapterLiveClient.tsx
@@ -171,6 +172,8 @@ src/components/ChaptersLiveClient.tsx
 src/components/ClearAllButton.tsx
 src/components/CollapsibleSection.tsx
 src/components/ConfirmSubmitButton.tsx
+src/components/CornerArrow.tsx
+src/components/Globe.tsx
 src/components/MarkAllReadButton.tsx
 src/components/MarkReadButton.tsx
 src/components/Markdown.tsx
@@ -233,5 +236,6 @@ src/server/services/notifications.ts
 src/server/sessionUserId.ts
 src/server/ssrFetch.ts
 src/types/next-auth.d.ts
+tree.git.txt
 tree.txt
 tsconfig.json

@@ -1,13 +1,15 @@
 "use client";
 
+import { Line2 } from "three/examples/jsm/lines/Line2.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
+
 import { useEffect, useRef } from "react";
 import {
   Scene,
   PerspectiveCamera,
   WebGLRenderer,
   Group,
-  Line,
-  LineBasicMaterial,
   BufferGeometry,
   Vector3,
   Mesh,
@@ -25,9 +27,9 @@ type Props = {
 
 export default function Globe({
   size = 160,
-  speedSec = 32,
-  tiltX = 28,
-  tiltZ = +14,
+  speedSec = 64,
+  tiltX = +54,
+  tiltZ = +28,
   className,
 }: Props) {
   const mountRef = useRef<HTMLDivElement | null>(null);
@@ -53,7 +55,9 @@ export default function Globe({
       powerPreference: "high-performance",
     });
 
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const dpr = Math.min(3, window.devicePixelRatio || 1);
+renderer.setPixelRatio(dpr);
+
     renderer.setSize(size, size, false);
     renderer.setClearAlpha(0);
 
@@ -102,72 +106,104 @@ spinGroup.add(occluder);
 
 
 
-const gridMat = new LineBasicMaterial({
-  color: 0xffffff,
+// ===== wide lines (Line2) =====
+const gridMat = new LineMaterial({
+  color: 0xD9D9D9,
   transparent: true,
-  opacity: 0.95,     // почти не прозрачный
-  depthTest: true,   // важно: линии тестят depth
-  depthWrite: false, // линии не пишут depth
+  opacity: 0.92,
+  linewidth: 2.0, // <- ВОТ тут реальная толщина в px
+  depthTest: true,
+  depthWrite: false,
 });
 
+const outlineMat = new LineMaterial({
+  color: 0xD9D9D9,
+  transparent: true,
+  opacity: 0.90,
+  linewidth: 2.6,
+  depthTest: true,
+  depthWrite: false,
+});
 
-    const makeLine = (pts: Vector3[]) => {
-      const geom = new BufferGeometry().setFromPoints(pts);
-      return new Line(geom, gridMat);
-    };
+const makeLine2 = (pts: Vector3[], mat: LineMaterial) => {
+  const positions: number[] = [];
+  for (const p of pts) positions.push(p.x, p.y, p.z);
 
-    // Parallels (lat)
-    for (let lat = -75; lat <= 75; lat += 15) {
-      const latRad = (lat * Math.PI) / 180;
-      const y = Math.sin(latRad) * radius;
-      const r = Math.cos(latRad) * radius;
+  const geom = new LineGeometry();
+  geom.setPositions(positions);
 
-      const pts: Vector3[] = [];
-      for (let d = 0; d <= 360; d += 6) {
-        const a = (d * Math.PI) / 180;
-        pts.push(new Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
-      }
-      spinGroup.add(makeLine(pts));
-    }
+  const line = new Line2(geom, mat);
+  line.computeLineDistances();
+  return line;
+};
 
-    // Meridians (lon)
-    for (let lon = 0; lon < 360; lon += 15) {
-      const lonRad = (lon * Math.PI) / 180;
+// плотнее сетка (как на рефе)
+const LAT_STEP = 7.5;  // было 10
+const LON_STEP = 7.5;  // было 10
+const PAR_SEG = 3;     // было 4
+const MER_SEG = 2.5;   // было 3
 
-      const pts: Vector3[] = [];
-      for (let lat = -90; lat <= 90; lat += 4) {
-        const latRad = (lat * Math.PI) / 180;
-        const x = Math.cos(latRad) * Math.cos(lonRad) * radius;
-        const y = Math.sin(latRad) * radius;
-        const z = Math.cos(latRad) * Math.sin(lonRad) * radius;
-        pts.push(new Vector3(x, y, z));
-      }
-      spinGroup.add(makeLine(pts));
-    }
+// Parallels
+for (let lat = -82.5; lat <= 82.5; lat += LAT_STEP) {
+  const latRad = (lat * Math.PI) / 180;
+  const y = Math.sin(latRad) * radius;
+  const r = Math.cos(latRad) * radius;
 
-    // Outline (silhouette)
-    const outlineMat = new LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.55,
-    });
-    const outlinePts: Vector3[] = [];
-    for (let d = 0; d <= 360; d += 4) {
-      const a = (d * Math.PI) / 180;
-      outlinePts.push(new Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
-    }
-    spinGroup.add(new Line(new BufferGeometry().setFromPoints(outlinePts), outlineMat));
+  const pts: Vector3[] = [];
+  for (let d = 0; d <= 360; d += PAR_SEG) {
+    const a = (d * Math.PI) / 180;
+    pts.push(new Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
+  }
+  spinGroup!.add(makeLine2(pts, gridMat));
+}
 
-    // --- resize
-    const resize = () => {
-      if (!renderer || !camera) return;
-      const rect = el.getBoundingClientRect();
-      const w = Math.max(1, Math.round(rect.width));
-      const h = Math.max(1, Math.round(rect.height));
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    };
+// Meridians
+for (let lon = 0; lon < 360; lon += LON_STEP) {
+  const lonRad = (lon * Math.PI) / 180;
+
+  const pts: Vector3[] = [];
+  for (let lat = -90; lat <= 90; lat += MER_SEG) {
+    const latRad = (lat * Math.PI) / 180;
+    const x = Math.cos(latRad) * Math.cos(lonRad) * radius;
+    const y = Math.sin(latRad) * radius;
+    const z = Math.cos(latRad) * Math.sin(lonRad) * radius;
+    pts.push(new Vector3(x, y, z));
+  }
+  spinGroup!.add(makeLine2(pts, gridMat));
+}
+
+// Outline (silhouette)
+const outlinePts: Vector3[] = [];
+for (let d = 0; d <= 360; d += 2) {
+  const a = (d * Math.PI) / 180;
+  outlinePts.push(new Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius));
+}
+spinGroup!.add(makeLine2(outlinePts, outlineMat));
+
+    
+
+// --- resize
+const resize = () => {
+  if (!renderer || !camera) return;
+
+  const rect = el.getBoundingClientRect();
+  const dpr = renderer.getPixelRatio();
+
+  // w/h в CSS-пикселях, но “кратно DPR” (стабильнее линии на зуме)
+  const w = Math.max(1, Math.round(rect.width * dpr)) / dpr;
+  const h = Math.max(1, Math.round(rect.height * dpr)) / dpr;
+
+  renderer.setSize(w, h, false);
+
+  // LineMaterial.resolution = device pixels
+  gridMat.resolution.set(w * dpr, h * dpr);
+  outlineMat.resolution.set(w * dpr, h * dpr);
+
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+};
+
+
     ro = new ResizeObserver(resize);
     ro.observe(el);
     resize();

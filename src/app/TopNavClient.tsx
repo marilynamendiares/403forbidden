@@ -12,10 +12,10 @@ type Item = {
 };
 
 const ITEMS: Item[] = [
-  { href: "/forum", label: "FORUM", num: "01" },
-  { href: "/world", label: "WORLD", num: "02" },
+  { href: "/forum", label: "F0RUM", num: "01" },
+  { href: "/world", label: "W0RLD", num: "02" },
   { href: "/players", label: "PLAYERS", num: "03" },
-  { href: "/books", label: "BOOKS", num: "04" },
+  { href: "/books", label: "B00KS", num: "04" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -39,19 +39,20 @@ export default function TopNavClient() {
     width: 0,
   });
 
-  const tabClass = (active: boolean) =>
-    [
-      "relative inline-flex items-center gap-2",
-      "px-4 py-2",
-      "uppercase tracking-[0.22em]",
-      "text-[12px] leading-none",
-      "font-mono",
-      "transition",
-      "rounded-none",
-      active
-        ? "bg-white text-neutral-900"
-        : "text-neutral-500 hover:text-neutral-300",
-    ].join(" ");
+const tabClass = (active: boolean) =>
+  [
+    "relative inline-flex items-center gap-2",
+    "px-4 py-2",
+    "uppercase tracking-[0.22em]",
+    "text-[12px] leading-none",
+    // NOTE: remove font-mono so it inherits Archimoto from header
+    "transition",
+    "rounded-none",
+    active
+      ? "bg-foreground text-neutral-900"
+      : "text-neutral-500 hover:text-neutral-300",
+  ].join(" ");
+
 
   const numClass = (active: boolean) =>
     [
@@ -87,7 +88,7 @@ export default function TopNavClient() {
   }, [activeIdx]);
 
 return (
-  <nav className="flex items-center justify-center">
+  <nav className="flex items-center justify-center header-font-archimoto">
     <div
       ref={navRef}
       className="relative inline-flex items-center justify-center gap-6"

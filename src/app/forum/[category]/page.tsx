@@ -77,9 +77,9 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">{category}</h1>
-        <a className="text-sm opacity-70 hover:underline" href="/forum">
+        <Link className="text-sm opacity-70 hover:underline" href="/forum">
           ← All categories
-        </a>
+        </Link>
       </div>
 
       <ul className="grid gap-3">

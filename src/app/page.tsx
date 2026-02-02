@@ -98,7 +98,7 @@ function UserLanding({ user }: { user: any }) {
       {/* 3 колонки × 2 ряда, как в рефе */}
       <div className="grid gap-6 text-sm md:grid-cols-3 md:auto-rows-[220px]">
         {/* Левый высокий красный блок – на две строки */}
-        <div className="rounded-[32px] bg-[#C15A48] overflow-hidden flex flex-col justify-between p-6 md:row-span-2">
+        <div className="rounded-4xl bg-[#C15A48] overflow-hidden flex flex-col justify-between p-6 md:row-span-2">
           <div className="flex items-start justify-between text-[10px] uppercase tracking-[0.3em] text-slate-100/80">
             <span>01</span>
             <span>cyberpunk • tech 2025</span>
@@ -115,7 +115,7 @@ function UserLanding({ user }: { user: any }) {
         </div>
 
         {/* Верхний правый – оранжевый, span на 2 колонки */}
-        <div className="rounded-[32px] bg-[#E39B4F] overflow-hidden flex flex-col justify-between p-6 md:col-span-2">
+        <div className="rounded-4xl bg-[#E39B4F] overflow-hidden flex flex-col justify-between p-6 md:col-span-2">
           <div className="flex items-start justify-between">
             <h2 className="text-lg font-semibold tracking-[0.25em] uppercase text-slate-900">
               CBRPNK
@@ -147,7 +147,7 @@ function UserLanding({ user }: { user: any }) {
         </div>
 
         {/* Нижний зелёный – 2-я колонка, 2-й ряд */}
-        <div className="rounded-[32px] bg-[#4E7F5F] overflow-hidden flex flex-col justify-between p-6 md:col-start-2 md:row-start-2">
+        <div className="rounded-4xl bg-[#4E7F5F] overflow-hidden flex flex-col justify-between p-6 md:col-start-2 md:row-start-2">
           <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.25em] text-slate-100/80">
             <span>dpm systm</span>
             <span>©2023</span>
@@ -164,7 +164,7 @@ function UserLanding({ user }: { user: any }) {
         </div>
 
         {/* Нижний серый – 3-я колонка, 2-й ряд */}
-        <div className="rounded-[32px] bg-[#B4B4B7] overflow-hidden flex flex-col justify-between p-6 md:col-start-3 md:row-start-2">
+        <div className="rounded-4xl bg-[#B4B4B7] overflow-hidden flex flex-col justify-between p-6 md:col-start-3 md:row-start-2">
           <div className="flex items-center justify-between">
             <div className="text-[10px] uppercase tracking-[0.25em] text-slate-900/80">
               retro ai <br />

@@ -4,8 +4,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { getSessionUserId } from "@/server/sessionUserId";
 import { isPlayer } from "@/server/player";
-import Globe from "@/components/Globe";
 import CornerArrow from "@/components/CornerArrow";
+import WorldHero from "@/components/world/WorldHero";
+import LayoutContainer from "@/components/LayoutContainer";
 
 export const dynamic = "force-dynamic";
 
@@ -205,30 +206,10 @@ export default async function WorldIndexPage() {
         ← Back to Forum
       </Link> */}
 
-      {/* WORLD OVERVIEW (centered) */}
+{/* WorldHero в том же SHELL, что и header/main (источник правды — layout.tsx) */}
+<WorldHero />
 
-<div className="pt-6 pb-4 space-y-4">
-  {/* Globe sigil */}
-  <div className="flex justify-center">
-    <Globe size={160} />
-  </div>
 
-  {/* Title */}
-  <div className="text-center text-xs font-mono uppercase tracking-[0.28em] opacity-50">
-    WORLD OVERVIEW
-  </div>
-
-  {/* Text */}
-  <p className="text-sm opacity-70 leading-relaxed max-w-2xl mx-auto text-center">
-    This page will contain the canonical overview of the city — a compact,
-    authoritative briefing on how it is built, who holds power, what the public is
-    allowed to know, and what is kept behind closed networks. Here we’ll outline
-    the main districts and their purpose, the forces that enforce order, the layers
-    of infrastructure that keep the metropolis alive, and the quiet rules that
-    shape daily life: what people trade, what they fear, what they pretend not to
-    see, and what happens when someone steps outside the permitted script.
-  </p>
-</div>
 
 
 {/* WORLD QUICK LINKS */}
