@@ -95,7 +95,7 @@ const bio = user.profile?.bio || "";
           <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
 <AvatarImg
-  src={avatarSrc}
+  src={resolveMediaUrl(user.profile?.avatarUrl) ?? "/default-avatar.svg"}
   alt={`${name} avatar`}
   className="h-full w-full object-cover"
 />
@@ -105,18 +105,16 @@ const bio = user.profile?.bio || "";
         {/* RIGHT: BANNER + NAME ROW (height follows avatar only, not stats) */}
         <div className="col-span-12 md:col-span-9">
           <div className="grid h-full grid-rows-[auto_auto] gap-2">
-            {/* Banner: smaller */}
-            <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
-{bannerSrc ? (
-  // eslint-disable-next-line @next/next/no-img-element
-  <img
-    src={bannerSrc}
-    alt={`${name} banner`}
-    className="h-full w-full object-cover"
-  />
-) : null}
-
-            </div>
+<div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
+  {user.profile?.bannerUrl ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={resolveMediaUrl(user.profile.bannerUrl) ?? ""}
+      alt={`${name} banner`}
+      className="h-full w-full object-cover"
+    />
+  ) : null}
+</div>
 
             {/* Name row: sits under banner, independent of stats */}
             <div className="flex items-end justify-between gap-4">

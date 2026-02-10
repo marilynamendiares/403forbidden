@@ -1,20 +1,16 @@
+// src/components/avatarImg.tsx
+"use client";
+
 import { resolveMediaUrl } from "@/lib/media";
 
-type Props = {
+type Props = React.ImgHTMLAttributes<HTMLImageElement> & {
   src?: string | null;
-  alt: string;
-  className?: string;
-  fallback?: string; // optional
+  fallback?: string;
 };
 
-export default function AvatarImg({
-  src,
-  alt,
-  className,
-  fallback = "/default-avatar.svg",
-}: Props) {
+export default function AvatarImg({ src, fallback = "/default-avatar.svg", ...props }: Props) {
   const resolved = resolveMediaUrl(src) ?? fallback;
 
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={resolved} alt={alt} className={className} />;
+  return <img {...props} src={resolved} />;
 }
