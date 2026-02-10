@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AvatarImg from "@/components/avatarImg";
+import { resolveMediaUrl } from "@/lib/media";
 import {
   useNotificationsFeed,
   type NotificationItem,
@@ -144,7 +145,7 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
   <span className="block h-full w-full overflow-hidden rounded-none">
     {/* eslint-disable-next-line @next/next/no-img-element */}
 <AvatarImg
-  src={avatarUrl}
+  src={resolveMediaUrl(avatarUrl)}
   alt={`${username} avatar`}
   className="h-full w-full object-cover"
 />
