@@ -80,8 +80,8 @@ export default async function PublicProfilePage({ params }: Params) {
   // ─────────────────────────────────────────────────────────────
 
   const name = user.profile?.displayName || user.username;
-  const avatar = user.profile?.avatarUrl || "/default-avatar.svg";
-  const banner = user.profile?.bannerUrl || null;
+const avatar = resolveMediaUrl(user.profile?.avatarUrl) || "/default-avatar.svg";
+const banner = resolveMediaUrl(user.profile?.bannerUrl);
   const bio = user.profile?.bio || "";
 
   return (

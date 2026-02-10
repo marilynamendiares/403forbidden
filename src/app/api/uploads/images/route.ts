@@ -21,25 +21,24 @@ function getR2Client() {
 }
 
 function toWebStream(body: any): ReadableStream<Uint8Array> {
-  // AWS SDK v3 может вернуть Readable (Node) или объект с transformToWebStream()
   if (!body) throw new Error("Empty body");
 
   if (typeof body.transformToWebStream === "function") {
     return body.transformToWebStream();
   }
 
-  // Node Readable -> Web ReadableStream
   if (body instanceof Readable) {
     // @ts-expect-error Node 18+: Readable.toWeb exists
     return Readable.toWeb(body);
   }
 
-  // fallback (на случай если уже WebStream)
   return body as ReadableStream<Uint8Array>;
 }
 
 export async function GET(req: NextRequest) {
-  const key = req.nextUrl.searchParams.get("key")?.trim() ?? "";
+  const raw = req.nextUrl.searchParams.get("key")?.trim() ?? "";
+  const key = raw.replace(/^\/+/, ""); // на всякий случай
+
   if (!key) {
     return new Response(JSON.stringify({ error: "missing_key" }), {
       status: 400,
@@ -72,7 +71,6 @@ export async function GET(req: NextRequest) {
       status: 200,
       headers: {
         "content-type": contentType,
-        // можно ослабить кэш пока дебажим; потом поставишь 1y immutable
         "cache-control": "public, max-age=3600",
         ...(out.ETag ? { etag: out.ETag } : {}),
       },
@@ -87,24 +85,20 @@ export async function GET(req: NextRequest) {
       code.includes("NoSuchKey") ||
       code.includes("NotFound");
 
-    return new Response(JSON.stringify({ error: isNotFound ? "not_found" : "fetch_failed" }), {
-      status: isNotFound ? 404 : 502,
-      headers: { "content-type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: isNotFound ? "not_found" : "fetch_failed" }),
+      {
+        status: isNotFound ? 404 : 502,
+        headers: { "content-type": "application/json" },
+      }
+    );
   }
 }
 
-/**
- * POST оставляем как было (пока upload не реализован).
- */
+// POST пока не реализуем
 export async function POST(_req: NextRequest) {
-  return new Response(
-    JSON.stringify({
-      error: "Image upload not implemented yet",
-    }),
-    {
-      status: 501,
-      headers: { "content-type": "application/json" },
-    }
-  );
+  return new Response(JSON.stringify({ error: "Image upload not implemented yet" }), {
+    status: 501,
+    headers: { "content-type": "application/json" },
+  });
 }

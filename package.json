@@ -10,7 +10,8 @@
     "migrate:content-html": "tsx scripts/migrate-content-html.ts",
     "seed:forum": "tsx scripts/seed-forum-categories.ts",
     "seed:shop": "tsx scripts/seed-shop.ts",
-    "packageManager": "pnpm@10.18.3"
+    "packageManager": "pnpm@10.18.3",
+    "migrate:media-keys": "tsx scripts/migrate-media-keys.ts"
   },
   "pnpm": {
   "onlyBuiltDependencies": [

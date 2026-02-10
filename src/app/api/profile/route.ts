@@ -6,14 +6,16 @@ import { authOptions } from "@/server/auth";
 import { prisma } from "@/server/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { normalizeUrl } from "@/lib/media";
+import { coerceMediaKey } from "@/lib/media";
 
 /* ── validation ─────────────────────────────────────────────────────────── */
 /**
  * ВАЖНО:
- * avatarUrl/bannerUrl НЕ валидируем как .url(), потому что:
- * - мы можем принимать key ("avatars/...") или относительный url ("/api/uploads/images?key=...")
- * - мы хотим чинить "https:/..." на входе
+ * avatarUrl/bannerUrl принимаем как string, потому что:
+ * - может прийти key ("avatars/...")
+ * - может прийти абсолютный URL (legacy)
+ * - может прийти "/api/uploads/images?key=..." (если кто-то так сохранит)
+ * Мы всё приводим к key через coerceMediaKey().
  */
 const PatchSchema = z.object({
   displayName: z.string().trim().min(1, "Display name is required").max(64),
@@ -54,12 +56,13 @@ export async function GET() {
   });
   if (!me) return new NextResponse("Not found", { status: 404 });
 
+  // ✅ ВОЗВРАЩАЕМ KEY (а не URL)
   return NextResponse.json({
     username: me.username,
     displayName: me.profile?.displayName ?? me.username,
     bio: me.profile?.bio ?? null,
-    avatarUrl: normalizeUrl(me.profile?.avatarUrl) ?? null,
-    bannerUrl: normalizeUrl(me.profile?.bannerUrl) ?? null,
+    avatarUrl: coerceMediaKey(me.profile?.avatarUrl) ?? null,
+    bannerUrl: coerceMediaKey(me.profile?.bannerUrl) ?? null,
     user: { id: me.id, email: me.email },
   });
 }
@@ -83,11 +86,11 @@ export async function PATCH(req: Request) {
     return new NextResponse(msg, { status: 400 });
   }
 
-  const { displayName, bio } = parsed.data;
+  const { displayName, bio, avatarUrl, bannerUrl } = parsed.data;
 
-  // normalize on input (может вернуть null)
-  const avatarUrlNorm = normalizeUrl(parsed.data.avatarUrl) ?? null;
-  const bannerUrlNorm = normalizeUrl(parsed.data.bannerUrl) ?? null;
+  // ✅ Нормализация ТОЛЬКО в KEY
+  const avatarKey = avatarUrl !== undefined ? (coerceMediaKey(avatarUrl) ?? null) : undefined;
+  const bannerKey = bannerUrl !== undefined ? (coerceMediaKey(bannerUrl) ?? null) : undefined;
 
   // гарантия, что у User есть username (должен быть после миграции)
   for (let i = 0; i < 3; i++) {
@@ -110,21 +113,15 @@ export async function PATCH(req: Request) {
         update: {
           displayName,
           bio: typeof bio === "string" ? bio : undefined,
-          // если пришло undefined — не трогаем;
-          // если пришла пустая строка -> normalizeUrl даст null -> сохраним null
-          ...(parsed.data.avatarUrl !== undefined
-            ? { avatarUrl: avatarUrlNorm }
-            : {}),
-          ...(parsed.data.bannerUrl !== undefined
-            ? { bannerUrl: bannerUrlNorm }
-            : {}),
+          ...(avatarKey !== undefined ? { avatarUrl: avatarKey } : {}),
+          ...(bannerKey !== undefined ? { bannerUrl: bannerKey } : {}),
         },
         create: {
           userId,
           displayName,
           bio: typeof bio === "string" ? bio : "",
-          avatarUrl: avatarUrlNorm,
-          bannerUrl: bannerUrlNorm,
+          avatarUrl: avatarKey ?? null,
+          bannerUrl: bannerKey ?? null,
         },
         select: {
           displayName: true,
@@ -139,12 +136,13 @@ export async function PATCH(req: Request) {
         select: { id: true, email: true, username: true },
       });
 
+      // ✅ ВОЗВРАЩАЕМ KEY (а не URL)
       return NextResponse.json({
         username: fresh!.username,
         displayName: updatedProfile.displayName,
         bio: updatedProfile.bio,
-        avatarUrl: normalizeUrl(updatedProfile.avatarUrl) ?? null,
-        bannerUrl: normalizeUrl(updatedProfile.bannerUrl) ?? null,
+        avatarUrl: coerceMediaKey(updatedProfile.avatarUrl) ?? null,
+        bannerUrl: coerceMediaKey(updatedProfile.bannerUrl) ?? null,
         user: { id: fresh!.id, email: fresh!.email },
       });
     } catch {
