@@ -10,7 +10,18 @@ export async function GET(
   ctx: { params: Promise<{ key: string[] }> }
 ) {
   const { key } = await ctx.params;
-  const objectKey = key.join("/"); // поддержка вложенных путей, если есть
+const objectKey = key.join("/"); // поддержка вложенных путей, если есть
+
+// DIAG: verify that this route is matched in production
+if (objectKey === "__ping") {
+  return new NextResponse("avatars route ok", {
+    status: 200,
+    headers: {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
 
   try {
 const r2Key = `avatars/${objectKey}`;
