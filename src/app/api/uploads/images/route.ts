@@ -2,49 +2,102 @@
 export const runtime = "nodejs";
 
 import type { NextRequest } from "next/server";
+import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { Readable } from "node:stream";
+
+function getR2Client() {
+  const endpoint = process.env.R2_ENDPOINT;
+  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
+  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+
+  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
+
+  return new S3Client({
+    region: process.env.R2_REGION ?? "auto",
+    endpoint,
+    credentials: { accessKeyId, secretAccessKey },
+    forcePathStyle: true,
+  });
+}
+
+function toWebStream(body: any): ReadableStream<Uint8Array> {
+  // AWS SDK v3 может вернуть Readable (Node) или объект с transformToWebStream()
+  if (!body) throw new Error("Empty body");
+
+  if (typeof body.transformToWebStream === "function") {
+    return body.transformToWebStream();
+  }
+
+  // Node Readable -> Web ReadableStream
+  if (body instanceof Readable) {
+    // @ts-expect-error Node 18+: Readable.toWeb exists
+    return Readable.toWeb(body);
+  }
+
+  // fallback (на случай если уже WebStream)
+  return body as ReadableStream<Uint8Array>;
+}
+
+export async function GET(req: NextRequest) {
+  const key = req.nextUrl.searchParams.get("key")?.trim() ?? "";
+  if (!key) {
+    return new Response(JSON.stringify({ error: "missing_key" }), {
+      status: 400,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  const bucket = process.env.R2_BUCKET;
+  const s3 = getR2Client();
+
+  if (!bucket || !s3) {
+    return new Response(JSON.stringify({ error: "r2_not_configured" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  try {
+    const out = await s3.send(
+      new GetObjectCommand({
+        Bucket: bucket,
+        Key: key,
+      })
+    );
+
+    const body = toWebStream(out.Body);
+    const contentType = out.ContentType ?? "application/octet-stream";
+
+    return new Response(body, {
+      status: 200,
+      headers: {
+        "content-type": contentType,
+        // можно ослабить кэш пока дебажим; потом поставишь 1y immutable
+        "cache-control": "public, max-age=3600",
+        ...(out.ETag ? { etag: out.ETag } : {}),
+      },
+    });
+  } catch (e: any) {
+    const name = String(e?.name ?? "");
+    const code = String(e?.Code ?? e?.code ?? "");
+
+    const isNotFound =
+      name.includes("NoSuchKey") ||
+      name.includes("NotFound") ||
+      code.includes("NoSuchKey") ||
+      code.includes("NotFound");
+
+    return new Response(JSON.stringify({ error: isNotFound ? "not_found" : "fetch_failed" }), {
+      status: isNotFound ? 404 : 502,
+      headers: { "content-type": "application/json" },
+    });
+  }
+}
 
 /**
- * 🪝 Скелет под R2-upload.
- *
- * План на будущее:
- *  - принимать FormData c файлом (field "file")
- *  - загружать в R2 (через S3-совместимый SDK или presigned URL)
- *  - возвращать { url: "https://cdn.example/..." }
- *
- * Сейчас:
- *  - просто 501 Not Implemented, чтобы не ломать ничего.
+ * POST оставляем как было (пока upload не реализован).
  */
-export async function POST(req: NextRequest) {
-  /**
-   * 🔮 FUTURE: здесь будет реальная загрузка в R2.
-   *
-   * Пример скелета (псевдокод):
-   *
-   * const form = await req.formData();
-   * const file = form.get("file") as File | null;
-   * if (!file || typeof file === "string") {
-   *   return new Response("No file", { status: 400 });
-   * }
-   *
-   * // 1) Прочитать содержимое файла как ArrayBuffer/Uint8Array
-   * //    const bytes = await file.arrayBuffer();
-   *
-   * // 2) Загрузить в R2 (пример через S3-совместимый клиент):
-   * //    await r2Client.putObject({
-   * //      Bucket: process.env.R2_BUCKET!,
-   * //      Key: someGeneratedKey,
-   * //      Body: Buffer.from(bytes),
-   * //      ContentType: file.type || "application/octet-stream",
-   * //      ACL: "public-read", // или через отдельный публичный endpoint
-   * //    });
-   *
-   * // 3) Сформировать публичный URL:
-   * //    const url = `https://your-r2-domain/${someGeneratedKey}`;
-   *
-   * // 4) Вернуть его клиенту:
-   * //    return Response.json({ url });
-   */
-
+export async function POST(_req: NextRequest) {
   return new Response(
     JSON.stringify({
       error: "Image upload not implemented yet",
