@@ -108,12 +108,14 @@ const bio = user.profile?.bio || "";
             {/* Banner: smaller */}
             <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
 {bannerSrc ? (
+  // eslint-disable-next-line @next/next/no-img-element
   <img
     src={bannerSrc}
     alt={`${name} banner`}
     className="h-full w-full object-cover"
   />
 ) : null}
+
             </div>
 
             {/* Name row: sits under banner, independent of stats */}

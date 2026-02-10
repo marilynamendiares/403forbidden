@@ -145,7 +145,7 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
   <span className="block h-full w-full overflow-hidden rounded-none">
     {/* eslint-disable-next-line @next/next/no-img-element */}
 <AvatarImg
-  src={resolveMediaUrl(avatarUrl)}
+  src={resolveMediaUrl(avatarUrl) ?? "/default-avatar.svg"}
   alt={`${username} avatar`}
   className="h-full w-full object-cover"
 />
