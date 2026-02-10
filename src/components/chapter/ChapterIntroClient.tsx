@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
 import AvatarImg from "@/components/avatarImg";
+import { resolveMediaUrl } from "@/lib/media";
 
 type Props = {
   chapterId: string; // 🆕 нужен для уникального ключа драфта
@@ -428,11 +429,11 @@ async function handleCancel() {
 <span className="inline-flex items-center gap-2 text-sm text-amber-300/90">
 <span className="h-8 w-8 overflow-hidden rounded-full border border-amber-500/30">
   {lock.lockedBy.avatarUrl ? (
-    <AvatarImg
-      src={lock.lockedBy.avatarUrl}
-      alt=""
-      className="h-full w-full object-cover"
-    />
+<img
+  src={resolveMediaUrl(lock.lockedBy.avatarUrl) ?? "/default-avatar.svg"}
+  alt=""
+  className="h-full w-full object-cover"
+/>
   ) : (
     <span className="flex h-full w-full items-center justify-center text-[10px] opacity-80">
       {(lock.lockedBy.username ?? "U").slice(0, 1).toUpperCase()}

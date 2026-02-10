@@ -8,6 +8,7 @@ import Markdown from "@/components/Markdown";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
 import { RichPostViewer } from "@/components/editor/RichPostViewer";
 import AvatarImg from "@/components/avatarImg";
+import { resolveMediaUrl } from "@/lib/media";
 
 
 export function ChapterPostItem(props: {
@@ -303,7 +304,7 @@ export function ChapterPostItem(props: {
         <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
           {author.avatarUrl ? (
 <AvatarImg
-  src={author.avatarUrl}
+  src={resolveMediaUrl(author.avatarUrl) ?? "/default-avatar.svg"}
   alt=""
   className="h-8 w-8 rounded-full object-cover"
 />

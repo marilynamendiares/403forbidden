@@ -79,10 +79,11 @@ export default async function PublicProfilePage({ params }: Params) {
   const reputation = wallet?.reputationTotal ?? 0;
   // ─────────────────────────────────────────────────────────────
 
-  const name = user.profile?.displayName || user.username;
-const avatar = resolveMediaUrl(user.profile?.avatarUrl) || "/default-avatar.svg";
-const banner = resolveMediaUrl(user.profile?.bannerUrl);
-  const bio = user.profile?.bio || "";
+const name = user.profile?.displayName || user.username;
+const avatarSrc = resolveMediaUrl(user.profile?.avatarUrl) ?? "/default-avatar.svg";
+const bannerSrc = resolveMediaUrl(user.profile?.bannerUrl);
+const bio = user.profile?.bio || "";
+
 
   return (
     <div className="py-8 space-y-6">
@@ -94,7 +95,7 @@ const banner = resolveMediaUrl(user.profile?.bannerUrl);
           <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
 <AvatarImg
-  src={user.profile?.avatarUrl}
+  src={avatarSrc}
   alt={`${name} avatar`}
   className="h-full w-full object-cover"
 />
@@ -106,10 +107,9 @@ const banner = resolveMediaUrl(user.profile?.bannerUrl);
           <div className="grid h-full grid-rows-[auto_auto] gap-2">
             {/* Banner: smaller */}
             <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
-{banner ? (
-  // eslint-disable-next-line @next/next/no-img-element
+{bannerSrc ? (
   <img
-    src={resolveMediaUrl(banner) ?? ""}
+    src={bannerSrc}
     alt={`${name} banner`}
     className="h-full w-full object-cover"
   />
