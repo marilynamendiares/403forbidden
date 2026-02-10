@@ -1,12 +1,6 @@
 // src/server/notify/queue.ts
 import { prisma } from "@/server/db";
-type Json =
-  | string
-  | number
-  | boolean
-  | null
-  | { [key: string]: Json }
-  | Json[];
+import type { Prisma } from "@prisma/client";
 
 import type { NotificationEvent } from "./types";
 import { emitNotifyUser } from "./emit";
@@ -27,18 +21,16 @@ export async function queueEvent(evt: NotificationEvent) {
       kind,
       entityType,
       entityId,
-      payload: (evt as unknown) as Json,
+      payload: (evt as unknown) as Prisma.InputJsonValue,
       status: "pending",
     },
     update: {
       // не создаём дубль; просто обновим payload (на случай если поменялся)
-      payload: (evt as unknown) as Json,
+      payload: (evt as unknown) as Prisma.InputJsonValue,
       // статус НЕ трогаем, чтобы не реанимировать done → pending
     },
   });
 }
-
-
 
 /**
  * Дренаж outbox: формирует Notification и пушит через SSE.
@@ -82,7 +74,6 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
     take: limit,
   });
 
-
   let created = 0;
   let errors = 0;
 
@@ -92,43 +83,41 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
 
       // Пустые события пропускаем
       if (!evt || !evt.recipients?.length) {
-      await prisma.outboxEvent.update({
-        where: { id: item.id },
-        data: { status: "done" },
-      });
+        await prisma.outboxEvent.update({
+          where: { id: item.id },
+          data: { status: "done" },
+        });
         continue;
       }
 
       // Создаём уведомления батчом
       const recipients = (evt.recipients ?? []) as string[];
 
-      const notifs = await prisma.$transaction((tx: typeof prisma) =>
+      const notifs = await prisma.$transaction((tx: Prisma.TransactionClient) =>
         Promise.all(
           recipients.map((userId: string) =>
             tx.notification.create({
-
-
-            data: {
-              userId,
-              type: evt.kind,
-              actorId: evt.actorId ?? null,
-              targetType: evt.target.type,
-              targetId: evt.target.id,
-              payload: ((evt.payload ?? {}) as unknown) as Json,
-            },
-            // Явно выбираем поля, которые дальше используем
-            select: {
-              id: true,
-              userId: true,
-              type: true,
-              targetType: true,
-              targetId: true,
-              isRead: true,
-              createdAt: true,
-            },
-          })
+              data: {
+                userId,
+                type: evt.kind,
+                actorId: evt.actorId ?? null,
+                targetType: evt.target.type,
+                targetId: evt.target.id,
+                payload: ((evt.payload ?? {}) as unknown) as Prisma.InputJsonValue,
+              },
+              // Явно выбираем поля, которые дальше используем
+              select: {
+                id: true,
+                userId: true,
+                type: true,
+                targetType: true,
+                targetId: true,
+                isRead: true,
+                createdAt: true,
+              },
+            })
+          )
         )
-      )
       );
 
       created += notifs.length;
@@ -146,7 +135,6 @@ export async function drainOutbox(opts: { limit?: number } = {}) {
           })
         )
       );
-
 
       await prisma.outboxEvent.update({
         where: { id: item.id },
