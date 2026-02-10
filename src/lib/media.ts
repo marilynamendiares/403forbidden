@@ -15,7 +15,7 @@
  *   /api/uploads/images?key=<key>
  */
 
-const PROXY_PREFIX = "/api/uploads/images";
+const MEDIA_PREFIX = "/media";
 
 function fixBrokenScheme(s: string) {
   return s
@@ -27,7 +27,7 @@ function tryExtractKeyFromProxyUrl(input: string): string | null {
   // 1) абсолютный URL
   try {
     const u = new URL(input);
-    if (u.pathname === PROXY_PREFIX) {
+    if (u.pathname === MEDIA_PREFIX) {
       const key = u.searchParams.get("key");
       return key ? key.trim() : null;
     }
@@ -36,7 +36,7 @@ function tryExtractKeyFromProxyUrl(input: string): string | null {
   }
 
   // 2) относительный URL ("/api/uploads/images?key=...")
-  if (input.startsWith(PROXY_PREFIX)) {
+  if (input.startsWith(MEDIA_PREFIX)) {
     try {
       const u = new URL(input, "http://local");
       const key = u.searchParams.get("key");
@@ -78,5 +78,6 @@ export function coerceMediaKey(input?: string | null): string | null {
 export function resolveMediaUrl(input?: string | null): string | null {
   const key = coerceMediaKey(input);
   if (!key) return null;
-  return `${PROXY_PREFIX}?key=${encodeURIComponent(key)}`;
+  // key уже вида "avatars/..../file.jpg" или "banners/..../file.jpg"
+  return `${MEDIA_PREFIX}/${key}`;
 }
