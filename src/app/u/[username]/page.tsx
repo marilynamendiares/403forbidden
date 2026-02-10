@@ -5,6 +5,9 @@ import { prisma } from "@/server/db";
 import { ThumbsUp, Star } from "lucide-react";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
+import AvatarImg from "@/components/avatarImg";
+import { resolveMediaUrl } from "@/lib/media";
+
 
 // для Next 15: params — Promise
 type Params = { params: Promise<{ username: string }> };
@@ -90,11 +93,11 @@ export default async function PublicProfilePage({ params }: Params) {
         <div className="col-span-12 md:col-span-3">
           <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={avatar}
-              alt={`${name} avatar`}
-              className="h-full w-full object-cover"
-            />
+<AvatarImg
+  src={user.profile?.avatarUrl}
+  alt={`${name} avatar`}
+  className="h-full w-full object-cover"
+/>
           </div>
         </div>
 
@@ -103,14 +106,14 @@ export default async function PublicProfilePage({ params }: Params) {
           <div className="grid h-full grid-rows-[auto_auto] gap-2">
             {/* Banner: smaller */}
             <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
-              {banner ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={banner}
-                  alt={`${name} banner`}
-                  className="h-full w-full object-cover"
-                />
-              ) : null}
+{banner ? (
+  // eslint-disable-next-line @next/next/no-img-element
+  <img
+    src={resolveMediaUrl(banner) ?? ""}
+    alt={`${name} banner`}
+    className="h-full w-full object-cover"
+  />
+) : null}
             </div>
 
             {/* Name row: sits under banner, independent of stats */}

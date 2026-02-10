@@ -7,6 +7,7 @@ import { ThumbsUp, Star } from "lucide-react";
 import Markdown from "@/components/Markdown";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
 import { RichPostViewer } from "@/components/editor/RichPostViewer";
+import AvatarImg from "@/components/avatarImg";
 
 
 export function ChapterPostItem(props: {
@@ -301,7 +302,11 @@ export function ChapterPostItem(props: {
       <div className="flex items-center gap-3">
         <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
           {author.avatarUrl ? (
-            <Image alt="" src={author.avatarUrl} width={32} height={32} />
+<AvatarImg
+  src={author.avatarUrl}
+  alt=""
+  className="h-8 w-8 rounded-full object-cover"
+/>
           ) : null}
         </div>
 

@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import AvatarImg from "@/components/avatarImg";
 import {
   useNotificationsFeed,
   type NotificationItem,
@@ -142,11 +143,11 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
   {/* КЛИП ДЛЯ КАРТИНКИ — внутри, чтобы бейдж не обрезался */}
   <span className="block h-full w-full overflow-hidden rounded-none">
     {/* eslint-disable-next-line @next/next/no-img-element */}
-    <img
-      src={avatarUrl || "/default-avatar.svg"}
-      alt=""
-      className="h-full w-full object-cover"
-    />
+<AvatarImg
+  src={avatarUrl}
+  alt={`${username} avatar`}
+  className="h-full w-full object-cover"
+/>
   </span>
 
   {notifCount > 0 && (
