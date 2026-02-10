@@ -6,13 +6,20 @@ import { authOptions } from "@/server/auth";
 import { prisma } from "@/server/db";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { normalizeUrl } from "@/lib/media";
 
 /* ── validation ─────────────────────────────────────────────────────────── */
+/**
+ * ВАЖНО:
+ * avatarUrl/bannerUrl НЕ валидируем как .url(), потому что:
+ * - мы можем принимать key ("avatars/...") или относительный url ("/api/uploads/images?key=...")
+ * - мы хотим чинить "https:/..." на входе
+ */
 const PatchSchema = z.object({
   displayName: z.string().trim().min(1, "Display name is required").max(64),
   bio: z.string().trim().max(1000).optional(),
-  avatarUrl: z.string().url().optional(),
-  bannerUrl: z.string().url().optional(),
+  avatarUrl: z.string().trim().max(2048).optional(),
+  bannerUrl: z.string().trim().max(2048).optional(),
 });
 
 // аварийный генератор username (теоретически не нужен после миграции)
@@ -21,40 +28,6 @@ function randomUsername(base?: string) {
     base?.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 16) || "user";
   const tail = Math.random().toString(36).slice(2, 8);
   return `${head}${tail}`;
-}
-
-/**
- * Нормализуем URL так, чтобы:
- * - НЕ ломать "https://"
- * - чинить "https:/..." -> "https://..."
- * - если URL парсится как полноценный, чистим повторные слэши только в pathname
- */
-function normalizeUrl(u?: string | null) {
-  const s0 = (u ?? "").trim();
-  if (!s0) return null;
-
-  // FIX: "https:/example.com" -> "https://example.com"
-  let s = s0
-    .replace(/^https:\/(?!\/)/i, "https://")
-    .replace(/^http:\/(?!\/)/i, "http://");
-
-  // Если это абсолютный URL — чистим только pathname, не трогая протокол
-  try {
-    const url = new URL(s);
-    // схлопываем // только в pathname
-    url.pathname = url.pathname.replace(/\/{2,}/g, "/");
-
-    // твои спец-фиксы
-    url.pathname = url.pathname.replace("/public/public/", "/public/");
-
-    return url.toString();
-  } catch {
-    // Если это не абсолютный URL (вдруг), применим аккуратный локальный фикс
-    // (не трогаем 'https://', т.к. его уже починили выше)
-    s = s.replace(/\/{2,}/g, "/");
-    s = s.replace("/public/public/", "/public/");
-    return s;
-  }
 }
 
 /* ── GET /api/profile  → профиль текущего юзера ────────────────────────── */
@@ -85,8 +58,8 @@ export async function GET() {
     username: me.username,
     displayName: me.profile?.displayName ?? me.username,
     bio: me.profile?.bio ?? null,
-    avatarUrl: normalizeUrl(me.profile?.avatarUrl),
-    bannerUrl: normalizeUrl(me.profile?.bannerUrl),
+    avatarUrl: normalizeUrl(me.profile?.avatarUrl) ?? null,
+    bannerUrl: normalizeUrl(me.profile?.bannerUrl) ?? null,
     user: { id: me.id, email: me.email },
   });
 }
@@ -110,7 +83,11 @@ export async function PATCH(req: Request) {
     return new NextResponse(msg, { status: 400 });
   }
 
-  const { displayName, bio, avatarUrl, bannerUrl } = parsed.data;
+  const { displayName, bio } = parsed.data;
+
+  // normalize on input (может вернуть null)
+  const avatarUrlNorm = normalizeUrl(parsed.data.avatarUrl) ?? null;
+  const bannerUrlNorm = normalizeUrl(parsed.data.bannerUrl) ?? null;
 
   // гарантия, что у User есть username (должен быть после миграции)
   for (let i = 0; i < 3; i++) {
@@ -133,15 +110,21 @@ export async function PATCH(req: Request) {
         update: {
           displayName,
           bio: typeof bio === "string" ? bio : undefined,
-          avatarUrl: normalizeUrl(avatarUrl) ?? undefined,
-          bannerUrl: normalizeUrl(bannerUrl) ?? undefined,
+          // если пришло undefined — не трогаем;
+          // если пришла пустая строка -> normalizeUrl даст null -> сохраним null
+          ...(parsed.data.avatarUrl !== undefined
+            ? { avatarUrl: avatarUrlNorm }
+            : {}),
+          ...(parsed.data.bannerUrl !== undefined
+            ? { bannerUrl: bannerUrlNorm }
+            : {}),
         },
         create: {
           userId,
           displayName,
           bio: typeof bio === "string" ? bio : "",
-          avatarUrl: normalizeUrl(avatarUrl),
-          bannerUrl: normalizeUrl(bannerUrl),
+          avatarUrl: avatarUrlNorm,
+          bannerUrl: bannerUrlNorm,
         },
         select: {
           displayName: true,
@@ -160,8 +143,8 @@ export async function PATCH(req: Request) {
         username: fresh!.username,
         displayName: updatedProfile.displayName,
         bio: updatedProfile.bio,
-        avatarUrl: normalizeUrl(updatedProfile.avatarUrl),
-        bannerUrl: normalizeUrl(updatedProfile.bannerUrl),
+        avatarUrl: normalizeUrl(updatedProfile.avatarUrl) ?? null,
+        bannerUrl: normalizeUrl(updatedProfile.bannerUrl) ?? null,
         user: { id: fresh!.id, email: fresh!.email },
       });
     } catch {
