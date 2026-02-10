@@ -7,6 +7,8 @@ import { usePathname, useSearchParams } from "next/navigation";
 import UserMenu from "@/components/UserMenu";
 import { useEventStream } from "@/hooks/useEventStream";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
+import { resolveMediaUrl } from "@/lib/media";
+
 
 type MeProfile = { username: string; avatarUrl: string | null };
 
@@ -54,10 +56,10 @@ export default function HeaderClient({ sseEventName }: { sseEventName?: string }
         if (!r.ok) return;
         const p = await r.json();
         if (!abort) {
-          setMe({
-            username: p.username,
-            avatarUrl: p.avatarUrl || "/default-avatar.svg",
-          });
+setMe({
+  username: p.username,
+  avatarUrl: resolveMediaUrl(p.avatarUrl) ?? "/default-avatar.svg",
+});
         }
       } catch {
         // ignore
