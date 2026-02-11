@@ -6,9 +6,7 @@ import Image from "next/image";
 import { ThumbsUp, Star } from "lucide-react";
 import Markdown from "@/components/Markdown";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
-import { RichPostViewer } from "@/components/editor/RichPostViewer";
 import AvatarImg from "@/components/avatarImg";
-import { resolveMediaUrl } from "@/lib/media";
 
 
 export function ChapterPostItem(props: {
@@ -304,10 +302,11 @@ export function ChapterPostItem(props: {
         <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
           {author.avatarUrl ? (
 <AvatarImg
-  src={resolveMediaUrl(author.avatarUrl) ?? "/default-avatar.svg"}
+  src={author.avatarUrl ?? undefined} // key only
   alt=""
   className="h-8 w-8 rounded-full object-cover"
 />
+
           ) : null}
         </div>
 

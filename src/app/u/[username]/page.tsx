@@ -8,7 +8,6 @@ import { authOptions } from "@/server/auth";
 import AvatarImg from "@/components/avatarImg";
 import { resolveMediaUrl } from "@/lib/media";
 
-
 // для Next 15: params — Promise
 type Params = { params: Promise<{ username: string }> };
 
@@ -80,8 +79,6 @@ export default async function PublicProfilePage({ params }: Params) {
   // ─────────────────────────────────────────────────────────────
 
 const name = user.profile?.displayName || user.username;
-const avatarSrc = resolveMediaUrl(user.profile?.avatarUrl) ?? "/default-avatar.svg";
-const bannerSrc = resolveMediaUrl(user.profile?.bannerUrl);
 const bio = user.profile?.bio || "";
 
 
@@ -95,10 +92,11 @@ const bio = user.profile?.bio || "";
           <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
             {/* eslint-disable-next-line @next/next/no-img-element */}
 <AvatarImg
-  src={resolveMediaUrl(user.profile?.avatarUrl) ?? "/default-avatar.svg"}
+  src={user.profile?.avatarUrl ?? undefined}
   alt={`${name} avatar`}
   className="h-full w-full object-cover"
 />
+
           </div>
         </div>
 
