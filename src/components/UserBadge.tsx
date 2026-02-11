@@ -1,3 +1,5 @@
+import { resolveMediaUrl } from "@/lib/media";
+
 // минимальный бейдж автора
 export default function UserBadge({
   href,
@@ -12,7 +14,8 @@ export default function UserBadge({
   displayName?: string | null;
   size?: number;
 }) {
-  const a = avatar || "/default-avatar.svg";
+  const a = resolveMediaUrl(avatar) || "/default-avatar.svg";
+
   return (
     <a href={href} className="inline-flex items-center gap-2 group">
       {/* eslint-disable-next-line @next/next/no-img-element */}
