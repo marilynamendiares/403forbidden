@@ -1,44 +1,24 @@
 // src/app/api/uploads/images/route.ts
 import type { NextRequest } from "next/server";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
+import { r2 } from "@/server/r2";
 
 export const runtime = "nodejs";
 
-
-function getR2Client() {
-  const endpoint = process.env.R2_ENDPOINT;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-
-  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
-
-  return new S3Client({
-    region: process.env.R2_REGION ?? "auto",
-    endpoint,
-    credentials: { accessKeyId, secretAccessKey },
-    forcePathStyle: true,
-  });
-}
-
 function toWebStream(body: any): ReadableStream<Uint8Array> {
   if (!body) throw new Error("Empty body");
-
-  if (typeof body.transformToWebStream === "function") {
-    return body.transformToWebStream();
-  }
-
+  if (typeof body.transformToWebStream === "function") return body.transformToWebStream();
   if (body instanceof Readable) {
     // @ts-expect-error Node 18+: Readable.toWeb exists
     return Readable.toWeb(body);
   }
-
   return body as ReadableStream<Uint8Array>;
 }
 
 export async function GET(req: NextRequest) {
   const raw = req.nextUrl.searchParams.get("key")?.trim() ?? "";
-  const key = raw.replace(/^\/+/, ""); // на всякий случай
+  const key = raw.replace(/^\/+/, "");
 
   if (!key) {
     return new Response(JSON.stringify({ error: "missing_key" }), {
@@ -48,9 +28,7 @@ export async function GET(req: NextRequest) {
   }
 
   const bucket = process.env.R2_BUCKET;
-  const s3 = getR2Client();
-
-  if (!bucket || !s3) {
+  if (!bucket) {
     return new Response(JSON.stringify({ error: "r2_not_configured" }), {
       status: 500,
       headers: { "content-type": "application/json" },
@@ -58,7 +36,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const out = await s3.send(
+    const out = await r2.send(
       new GetObjectCommand({
         Bucket: bucket,
         Key: key,
@@ -96,10 +74,9 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST пока не реализуем
-export async function POST(_req: NextRequest) {
-  return new Response(JSON.stringify({ error: "Image upload not implemented yet" }), {
-    status: 501,
+export async function POST() {
+  return new Response(JSON.stringify({ error: "method_not_allowed" }), {
+    status: 405,
     headers: { "content-type": "application/json" },
   });
 }
