@@ -17,6 +17,12 @@ import { isAdminSession } from "@/server/admin";
 
 export const dynamic = "force-dynamic";
 
+// Next 15: params/searchParams — Promise
+type PageProps = {
+  params: Promise<{ category: string; slug: string }>;
+  searchParams: Promise<{ cursor?: string }>;
+};
+
 async function getThread(category: string, slug: string, cursor?: string) {
   const h = await headers();
   const origin =
@@ -35,7 +41,9 @@ async function getThread(category: string, slug: string, cursor?: string) {
     : { items: [], nextCursor: null };
 
   // fetch thread meta (authorId) to control Delete button visibility
-  const metaUrl = new URL(`${origin}/api/forum/categories/${category}/threads/${slug}`);
+  const metaUrl = new URL(
+    `${origin}/api/forum/categories/${category}/threads/${slug}`
+  );
   const metaRes = await ssrFetch(metaUrl);
   const meta = metaRes.ok ? await metaRes.json().catch(() => null) : null;
 
@@ -47,27 +55,22 @@ async function getThread(category: string, slug: string, cursor?: string) {
   };
 }
 
-export default async function ThreadPage({
-  params,
-  searchParams,
-}: {
-  params: { category: string; slug: string };
-  searchParams: { cursor?: string };
-}) {
+export default async function ThreadPage({ params, searchParams }: PageProps) {
+  const { category, slug } = await params;
+  const sp = await searchParams;
+
   const session = await getServerSession(authOptions);
   const me = getSessionUserId(session);
 
-  const category = String(params.category);
-  const slug = String(params.slug);
-
   const { posts, nextCursor, title, threadAuthorId } = await getThread(
-    category,
-    slug,
-    searchParams.cursor
+    String(category),
+    String(slug),
+    sp?.cursor
   );
 
   const admin = isAdminSession(session as any);
-  const canDeleteThread = !!me && (admin || (threadAuthorId && me === threadAuthorId));
+  const canDeleteThread =
+    !!me && (admin || (threadAuthorId && me === threadAuthorId));
 
   async function removePost(id: string) {
     "use server";
@@ -142,13 +145,9 @@ export default async function ThreadPage({
       throw new Error(`Failed to delete thread (${res.status}): ${text}`);
     }
 
-    // после удаления треда уходим в категорию
-    // (revalidate не нужен, потому что будет navigation)
-    // но можно оставить для чистоты:
     revalidatePath(`/forum/${category}`);
     redirect(`/forum/${category}`);
   }
-
 
   return (
     <div className="space-y-6">
