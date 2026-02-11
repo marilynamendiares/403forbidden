@@ -27,10 +27,9 @@ async function toWebStream(body: any): Promise<ReadableStream<Uint8Array>> {
     return body.transformToWebStream();
   }
 
-  // Node runtime fallback (без top-level import)
   const { Readable } = await import("node:stream");
   if (body instanceof Readable) {
-    // @ts-expect-error Node: Readable.toWeb exists
+    // @ts-expect-error
     return Readable.toWeb(body);
   }
 
@@ -38,7 +37,7 @@ async function toWebStream(body: any): Promise<ReadableStream<Uint8Array>> {
 }
 
 export async function GET(req: NextRequest) {
-  // 1) ДИАГНОСТИКА: доказываем, что Vercel реально исполняет ЭТОТ файл
+  // DEBUG PING
   if (req.nextUrl.searchParams.get("__ping") === "1") {
     return new Response(
       JSON.stringify({
@@ -55,13 +54,12 @@ export async function GET(req: NextRequest) {
         headers: {
           "content-type": "application/json",
           "cache-control": "no-store",
-          "x-uploads-images": "ping",
+          "x-uploads-images": "ping-v2",
         },
       }
     );
   }
 
-  // 2) ОСНОВНАЯ ЛОГИКА
   const raw = req.nextUrl.searchParams.get("key")?.trim() ?? "";
   const key = raw.replace(/^\/+/, "");
 
@@ -107,7 +105,7 @@ export async function GET(req: NextRequest) {
         "content-type": contentType,
         "cache-control": "public, max-age=3600",
         ...(out.ETag ? { etag: out.ETag } : {}),
-        "x-uploads-images": "ok",
+        "x-uploads-images": "ok-v2",
       },
     });
   } catch (e: any) {
@@ -127,9 +125,28 @@ export async function GET(req: NextRequest) {
         headers: {
           "content-type": "application/json",
           "cache-control": "no-store",
-          "x-uploads-images": isNotFound ? "not_found" : "fetch_failed",
+          "x-uploads-images": isNotFound
+            ? "not_found-v2"
+            : "fetch_failed-v2",
         },
       }
     );
   }
+}
+
+// 👇 ДОБАВЛЯЕМ ЭТО В КОНЕЦ ФАЙЛА
+
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      Allow: "GET, HEAD, OPTIONS",
+      "x-uploads-images": "options-v2",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+export async function HEAD(req: NextRequest) {
+  return GET(req);
 }
