@@ -1,9 +1,10 @@
 // src/app/api/uploads/images/route.ts
-export const runtime = "nodejs";
-
 import type { NextRequest } from "next/server";
 import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
 import { Readable } from "node:stream";
+
+export const runtime = "nodejs";
+
 
 function getR2Client() {
   const endpoint = process.env.R2_ENDPOINT;
