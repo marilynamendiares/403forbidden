@@ -27,18 +27,23 @@ export async function GET(req: NextRequest) {
 
       const onAbort = () => {
         aborted = true;
-        if (ka) { clearInterval(ka); ka = null; }
+        if (ka) {
+          clearInterval(ka);
+          ka = null;
+        }
         removeClient(id);
-        try { controller.close(); } catch {}
+        try {
+          controller.close();
+        } catch {}
         req.signal.removeEventListener("abort", onAbort);
       };
 
       req.signal.addEventListener("abort", onAbort);
 
-      // подсказка клиенту по реконнекту
+      // client reconnect hint
       send(`retry: 5000\n`);
 
-      // hello (для дебага)
+      // hello (debug-friendly but harmless)
       send(
         `event: hello\ndata: ${JSON.stringify({
           ok: true,
@@ -51,57 +56,88 @@ export async function GET(req: NextRequest) {
       // keepalive
       ka = setInterval(() => send(`: keepalive ${Date.now()}\n\n`), 15_000);
 
-      // Если Redis недоступен — fallback на старое поведение (in-memory)
+      // In-memory fallback (local/dev)
       if (!redis) {
         addClient({
           id,
           write: (chunk: string) => send(chunk),
           close: () => {
-            try { controller.close(); } catch {}
+            try {
+              controller.close();
+            } catch {}
             req.signal.removeEventListener("abort", onAbort);
           },
         });
         return;
       }
 
-      // Redis mode: читаем события из Stream и пушим в SSE
-      // EventSource при реконнекте шлёт Last-Event-ID если мы посылаем id:
-      let lastId = req.headers.get("last-event-id") || "$";
+      // Redis mode
+      // If this is a reconnect, browser may send Last-Event-ID
+      const headerLast = req.headers.get("last-event-id");
+      let lastId = headerLast && headerLast.length > 0 ? headerLast : "$";
 
-      // Если это первый коннект (нет last-event-id), можно начать с "$" (только новые)
-      // Если хочешь "догонять последние", заменим на "0-0" и введём лимит — сделаем позже.
       while (!aborted) {
         try {
-          // XREAD BLOCK 20000 STREAMS sse:events <lastId>
-          const res = await redis.xread(
-  EVENTS_STREAM_KEY,
-  lastId,
-  { blockMS: 20000, count: 100 }
-);
+          const res = await (redis as any).xread(
+            EVENTS_STREAM_KEY,
+            lastId,
+            { blockMS: 20000, count: 100 },
+          );
           if (!res) continue;
 
-          // формат Upstash: [ [ streamKey, [ [id, {event, data}], ... ] ] ]
-const streams = Array.isArray(res) ? res : [res];
+          const streams = Array.isArray(res) ? res : [res];
 
-for (const stream of streams as any[]) {
-  const entries = stream?.messages ?? stream?.[1] ?? [];
-  for (const msg of entries as any[]) {
-    const entryId = msg?.id ?? msg?.[0];
-    const fields = msg?.message ?? msg?.[1] ?? {};
+          for (const stream of streams as any[]) {
+            const entries = stream?.messages ?? stream?.[1] ?? [];
 
-    if (!entryId) continue;
-    lastId = entryId;
+            for (const msg of entries as any[]) {
+              const entryId = msg?.id ?? msg?.[0];
+              let fields: any = msg?.message ?? msg?.[1] ?? {};
 
-    const event = fields?.event ?? "message";
-    const dataRaw = fields?.data ?? "{}";
+              // Upstash can return fields as:
+              // 1) object: { event: "...", data: "..." }
+              // 2) array of pairs: [["event","..."],["data","..."]]
+              // 3) flat array: ["event","...","data","..."]
+              if (Array.isArray(fields)) {
+                if (fields.length && typeof fields[0] === "string") {
+                  const o: any = {};
+                  for (let i = 0; i < fields.length; i += 2) o[fields[i]] = fields[i + 1];
+                  fields = o;
+                } else {
+                  fields = Object.fromEntries(fields);
+                }
+              }
 
-    send(`id: ${entryId}\n`);
-    send(`event: ${event}\n`);
-    send(`data: ${dataRaw}\n\n`);
-  }
-}
+              if (!entryId) continue;
+              lastId = entryId;
+
+              const event = fields?.event ?? "message";
+
+              // Ensure `data:` is always a JSON string
+              let dataRaw = "{}";
+              if (fields?.data === undefined || fields?.data === null) {
+                dataRaw = "{}";
+              } else if (typeof fields.data === "string") {
+                const s = fields.data.trim();
+                if (
+                  (s.startsWith("{") && s.endsWith("}")) ||
+                  (s.startsWith("[") && s.endsWith("]"))
+                ) {
+                  dataRaw = s;
+                } else {
+                  dataRaw = JSON.stringify({ value: fields.data });
+                }
+              } else {
+                dataRaw = JSON.stringify(fields.data);
+              }
+
+              send(`id: ${entryId}\n`);
+              send(`event: ${event}\n`);
+              send(`data: ${dataRaw}\n\n`);
+            }
+          }
         } catch {
-          // не рвём поток — просто продолжим, keepalive удержит соединение
+          // keepalive keeps the connection alive; EventSource will reconnect if needed
         }
       }
     },

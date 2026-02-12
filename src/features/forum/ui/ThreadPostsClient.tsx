@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Markdown from "@/components/Markdown";
 import UserBadge from "@/components/UserBadge";
@@ -43,7 +43,9 @@ export default function ThreadPostsClient({
   const inflightRef = useRef(false);
   const queuedRef = useRef(false);
 
-  const lastId = useMemo(() => posts.at(-1)?.id ?? null, [posts]);
+  const last = useMemo(() => posts.at(-1) ?? null, [posts]);
+  const lastId = last?.id ?? null;
+  const lastCreatedAt = last?.createdAt ?? null;
 
   const matchThread = useCallback(
     (e: any) => String(e?.category) === String(category) && String(e?.slug) === String(slug),
@@ -51,6 +53,8 @@ export default function ThreadPostsClient({
   );
 
   const fetchNew = useCallback(async () => {
+        console.log("[fetchNew] start", { lastCreatedAt, lastId });
+
     if (inflightRef.current) {
       queuedRef.current = true;
       return;
@@ -61,25 +65,49 @@ export default function ThreadPostsClient({
       const base = `/api/forum/categories/${encodeURIComponent(category)}/threads/${encodeURIComponent(slug)}/posts`;
       const url = new URL(base, window.location.origin);
 
-      if (lastId) url.searchParams.set("cursor", lastId);
+      // Realtime tail mode: fetch strictly after (createdAt,id)
+      if (lastCreatedAt) url.searchParams.set("afterCreatedAt", lastCreatedAt);
+      if (lastId) url.searchParams.set("afterId", lastId);
       url.searchParams.set("take", "100");
 
+
+      console.log("[fetchNew] url =", url.toString());
+
       const res = await fetch(url.toString(), { cache: "no-store" });
+      console.log("[fetchNew] status =", res.status);
+
       if (!res.ok) return;
 
       const data = await res.json().catch(() => null);
       const items: Post[] = Array.isArray(data?.items) ? data.items : [];
 
+      console.log("[fetchNew] got items =", items.length, {
+        lastCreatedAt,
+        lastId,
+        first: items[0]?.id,
+        last: items[items.length - 1]?.id,
+      });
+
       if (items.length) {
         setPosts((prev) => {
           const seen = new Set(prev.map((p) => p.id));
           const merged = [...prev];
+          let added = 0;
+
           for (const it of items) {
-            if (!seen.has(it.id)) merged.push(it);
+            if (!seen.has(it.id)) {
+              merged.push(it);
+              added++;
+            }
           }
+
+          console.log("[fetchNew] added =", added, "prev =", prev.length, "next =", merged.length);
           return merged;
         });
+      } else {
+        console.log("[fetchNew] no new items");
       }
+
     } finally {
       inflightRef.current = false;
       if (queuedRef.current) {
@@ -87,23 +115,36 @@ export default function ThreadPostsClient({
         fetchNew();
       }
     }
-  }, [category, slug, lastId]);
+  }, [category, slug, lastId, lastCreatedAt]);
 
-  useEventStream({
-    "thread:new_post": (e) => {
-      if (!matchThread(e)) return;
+useEventStream({
+  "thread:new_post": (e) => {
+    if (!matchThread(e)) return;
+    fetchNew();
+  },
+  "thread:post_deleted": (e) => {
+    if (!matchThread(e)) return;
+    const postId = e?.postId;
+    if (!postId) return;
+    setPosts((prev) => prev.filter((p) => p.id !== String(postId)));
+  },
+});
 
-      // оптимизация: если это событие уже содержит postId — можно попробовать "быстрый dedupe",
-      // но мы всё равно подкачиваем через cursor (самый надёжный источник истины)
-      fetchNew();
-    },
-    "thread:post_deleted": (e) => {
-      if (!matchThread(e)) return;
-      const postId = e?.postId;
-      if (!postId) return;
-      setPosts((prev) => prev.filter((p) => p.id !== String(postId)));
-    },
-  });
+
+
+
+useEffect(() => {
+  const onLocal = (evt: Event) => {
+    const ce = evt as CustomEvent<any>;
+    const e = ce.detail;
+    if (!matchThread(e)) return;
+    fetchNew();
+  };
+
+  window.addEventListener("app:thread:new_post", onLocal);
+  return () => window.removeEventListener("app:thread:new_post", onLocal);
+}, [matchThread, fetchNew]);
+
 
   return (
     <>
@@ -118,7 +159,9 @@ export default function ThreadPostsClient({
                 displayName={p.author?.profile?.displayName ?? null}
                 size={24}
               />
-              <time className="text-xs opacity-60">{timeAgo(p.createdAt)}</time>
+              <time className="text-xs opacity-60" suppressHydrationWarning>
+  {timeAgo(p.createdAt)}
+</time>
             </div>
 
             <Markdown>{p.markdown ?? ""}</Markdown>

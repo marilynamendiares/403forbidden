@@ -1,5 +1,4 @@
 // src/app/forum/[category]/[slug]/page.tsx
-import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { ssrFetch } from "@/server/ssrFetch";
 import { getServerSession } from "next-auth";
@@ -8,12 +7,10 @@ import { getSessionUserId } from "@/server/sessionUserId";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import ReplyFormClient from "@/components/ReplyFormClient";
-import Markdown from "@/components/Markdown";
-import { timeAgo } from "@/lib/TimeAgo";
 import ThreadPostsClient from "@/features/forum/ui/ThreadPostsClient";
-import UserBadge from "@/components/UserBadge";
 import ConfirmSubmitButton from "@/components/ConfirmSubmitButton";
 import { isAdminSession } from "@/server/admin";
+
 
 export const dynamic = "force-dynamic";
 
@@ -90,8 +87,6 @@ export default async function ThreadPage({ params, searchParams }: PageProps) {
       const text = await res.text().catch(() => "");
       throw new Error(`Failed to delete (${res.status}): ${text}`);
     }
-
-    revalidatePath(`/forum/${category}/${slug}`);
   }
 
   async function send(formData: FormData) {
@@ -118,8 +113,6 @@ export default async function ThreadPage({ params, searchParams }: PageProps) {
       const text = await res.text().catch(() => "");
       throw new Error(`Failed to reply (${res.status}): ${text}`);
     }
-
-    revalidatePath(`/forum/${category}/${slug}`);
   }
 
   async function deleteThread() {

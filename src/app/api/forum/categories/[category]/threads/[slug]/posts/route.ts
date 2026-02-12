@@ -23,33 +23,77 @@ export async function GET(req: NextRequest, { params }: Ctx) {
   if (!thread) return NextResponse.json({ error: "thread_not_found" }, { status: 404 });
 
   const url = new URL(req.url);
-  const cursor = url.searchParams.get("cursor") ?? undefined;
+
   const take = Math.min(Number(url.searchParams.get("take") ?? 30), 100);
 
+  // Realtime "tail" mode: fetch posts strictly after (createdAt,id)
+  const afterCreatedAt = url.searchParams.get("afterCreatedAt");
+  const afterId = url.searchParams.get("afterId");
+
+  const cursor = url.searchParams.get("cursor") ?? undefined;
+
+  const baseSelect = {
+    id: true,
+    createdAt: true,
+    updatedAt: true,
+    markdown: true,
+    authorId: true,
+    author: {
+      select: {
+        id: true,
+        username: true,
+        profile: {
+          select: {
+            displayName: true,
+            avatarUrl: true,
+          },
+        },
+      },
+    },
+  } as const;
+
+  // --- Mode A: realtime tail (recommended for SSE-driven updates) ---
+  if (afterCreatedAt) {
+    const afterDate = new Date(afterCreatedAt);
+    if (Number.isNaN(afterDate.getTime())) {
+      return NextResponse.json({ error: "bad_afterCreatedAt" }, { status: 400 });
+    }
+
+    const posts = await prisma.forumPost.findMany({
+      where: {
+        threadId: thread.id,
+        OR: [
+          { createdAt: { gt: afterDate } },
+          ...(afterId ? [{ createdAt: { equals: afterDate }, id: { gt: afterId } }] : []),
+        ],
+      },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      take,
+      select: baseSelect,
+    });
+
+    console.log("[GET posts tail]", {
+      category,
+      slug,
+      threadId: thread.id,
+      afterCreatedAt,
+      afterId,
+      found: posts.length,
+      first: posts[0]?.id,
+      last: posts[posts.length - 1]?.id,
+    });
+
+    return NextResponse.json({ items: posts, nextCursor: null });
+  }
+
+
+  // --- Mode B: classic pagination (older posts) ---
   const posts = await prisma.forumPost.findMany({
     where: { threadId: thread.id },
     orderBy: { createdAt: "asc" },
     take: take + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    select: {
-      id: true,
-      createdAt: true,
-      updatedAt: true,
-      markdown: true,
-      authorId: true,
-      author: {
-        select: {
-          id: true,
-          username: true,
-          profile: {
-            select: {
-              displayName: true,
-              avatarUrl: true,
-            },
-          },
-        },
-      },
-    },
+    select: baseSelect,
   });
 
   let nextCursor: string | null = null;
