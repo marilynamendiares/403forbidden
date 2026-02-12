@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
-import ChaptersLiveClient from "@/components/ChaptersLiveClient"; // ← NEW: realtime списка глав
+import ChaptersLiveClient from "@/features/chapters/ui/ChaptersLiveClient";
 import { getBookBySlug, getFollowStatus } from "@/server/follow";
 import { FollowBookButton } from "@/components/follow/FollowBookButton";
 import CollapsibleSection from "@/components/CollapsibleSection";

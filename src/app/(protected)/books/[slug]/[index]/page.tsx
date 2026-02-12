@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { timeAgo } from "@/lib/TimeAgo";
 import { redis, chapterLockKey } from "@/server/redis";
-import ChapterLiveClient from "@/components/ChapterLiveClient";
+import ChapterLiveClient from "@/features/chapters/ui/ChapterLiveClient";
 import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
