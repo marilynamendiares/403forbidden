@@ -3,7 +3,7 @@ import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
-import { emit } from "@/server/events";
+import { publish } from "@/features/realtime/server/bus";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -36,13 +36,14 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
   await prisma.forumPost.delete({ where: { id: post.id } });
 
   // эмитим с threadId И category/slug — покроет оба типа подписчиков
-  emit("thread:post_deleted", {
+  await publish("thread:post_deleted", {
     threadId: post.thread?.id ?? post.threadId,
-    category: post.thread?.category.slug,
-    slug: post.thread?.slug,
+    category: post.thread?.category.slug ?? null,
+    slug: post.thread?.slug ?? null,
     postId: post.id,
     at: Date.now(),
   });
+
 
   return new Response(null, { status: 204 });
 }

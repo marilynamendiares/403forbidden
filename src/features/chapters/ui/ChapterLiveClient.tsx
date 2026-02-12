@@ -1,7 +1,7 @@
 // src/components/ChapterLiveClient.tsx
 "use client";
 import { useRouter } from "next/navigation";
-import { useEventStream } from "@/hooks/useEventStream";
+import { useEventStream } from "@/features/realtime/client/useEventStream";
 
 export default function ChapterLiveClient(props: { slug: string; index: string | number }) {
   const router = useRouter();

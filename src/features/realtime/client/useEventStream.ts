@@ -127,5 +127,5 @@ for (const name of eventNames) {
       es.close();
     };
     // переподключение: при смене endpoint или набора именованных событий
-  }, [endpoint, JSON.stringify(eventNames)]);
+    }, [endpoint, eventNames.join("|")]);
 }

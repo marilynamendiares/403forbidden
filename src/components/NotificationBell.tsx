@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useEventStream } from "@/hooks/useEventStream";
+import { useEventStream } from "@/features/realtime/client/useEventStream";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
 export default function NotificationBell(props: { sseEventName?: string; className?: string }) {

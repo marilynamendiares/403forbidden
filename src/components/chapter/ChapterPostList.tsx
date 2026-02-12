@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChapterPostItem } from "./ChapterPostItem";
-import { useEventStream } from "@/hooks/useEventStream";
+import { useEventStream } from "@/features/realtime/client/useEventStream";
 
 type Author = {
   id: string;

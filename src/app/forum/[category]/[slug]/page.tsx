@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import ReplyFormClient from "@/components/ReplyFormClient";
 import Markdown from "@/components/Markdown";
 import { timeAgo } from "@/lib/TimeAgo";
-import ThreadLiveClient from "@/components/ThreadLiveClient";
+import ThreadPostsClient from "@/features/forum/ui/ThreadPostsClient";
 import UserBadge from "@/components/UserBadge";
 import ConfirmSubmitButton from "@/components/ConfirmSubmitButton";
 import { isAdminSession } from "@/server/admin";
@@ -174,50 +174,17 @@ export default async function ThreadPage({ params, searchParams }: PageProps) {
         )}
       </div>
 
-      <ul className="grid gap-3">
-        {posts.map((p: any) => (
-          <li key={p.id} className="border border-neutral-800 rounded-xl p-4">
-            <div className="flex items-center justify-between mb-2">
-              <UserBadge
-                href={`/u/${encodeURIComponent(p.author?.username ?? "user")}`}
-                avatar={p.author?.profile?.avatarUrl ?? null}
-                username={p.author?.username ?? "user"}
-                displayName={p.author?.profile?.displayName ?? null}
-                size={24}
-              />
-              <time className="text-xs opacity-60">{timeAgo(p.createdAt)}</time>
-            </div>
-
-            <Markdown>{p.markdown ?? ""}</Markdown>
-
-            {me && me === p.authorId && (
-              <form action={removePost.bind(null, p.id)} className="pt-2">
-                <button
-                  type="submit"
-                  className="text-xs opacity-70 hover:opacity-100 underline"
-                >
-                  Delete
-                </button>
-              </form>
-            )}
-          </li>
-        ))}
-        {posts.length === 0 && <p className="opacity-60">No posts yet.</p>}
-      </ul>
-
-      {nextCursor && (
-        <div className="pt-2">
-          <Link
-            href={`/forum/${category}/${slug}?cursor=${nextCursor}`}
-            className="rounded bg-neutral-900 px-3 py-2 text-sm hover:bg-neutral-800"
-          >
-            Load more posts
-          </Link>
-        </div>
-      )}
+      <ThreadPostsClient
+        category={String(category)}
+        slug={String(slug)}
+        initialPosts={posts}
+        initialNextCursor={nextCursor}
+        meId={me ?? null}
+        removePostAction={removePost}
+      />
 
       <ReplyFormClient action={send} />
-      <ThreadLiveClient category={category} slug={slug} />
+
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import UserMenu from "@/components/UserMenu";
-import { useEventStream } from "@/hooks/useEventStream";
+import { useEventStream } from "@/features/realtime/client/useEventStream";
 import { useUnreadNotifications } from "@/hooks/useUnreadNotifications";
 
 

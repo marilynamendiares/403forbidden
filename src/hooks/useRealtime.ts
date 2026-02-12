@@ -1,7 +1,7 @@
 // src/hooks/useRealtime.ts
 "use client";
 
-import { useEventStream, type HandlerMap } from "@/hooks/useEventStream";
+import { useEventStream, type HandlerMap } from "@/features/realtime/client/useEventStream";
 
 type UseRealtimeOptions = {
   /** Проксирует topic в query-параметр (если когда-нибудь понадобится) */

@@ -1,6 +1,6 @@
 // src/server/services/chapters.ts
 import { prisma } from "@/server/db";
-import { emit } from "@/server/events";
+import { publish } from "@/features/realtime/server/bus";
 import { ChapterStatus } from "@prisma/client";
 import { requireRole } from "@/server/access";
 import { queueEvent, drainOutbox } from "@/server/notify/queue";
@@ -73,7 +73,7 @@ async function toggleChapterStatus(
 
   // 6) SSE событие
   const evt = next === "OPEN" ? "chapter:opened" : "chapter:closed";
-  emit(evt, {
+  await publish(evt, {
     bookSlug,
     chapterId: updated.id,
     status: updated.status,
@@ -143,7 +143,7 @@ type CreateChapterInput = {
 };
 
 export async function createChapterForUser(input: CreateChapterInput) {
-  const { slug, userId, title, content, publish } = input;
+  const { slug, userId, title, content, publish: shouldPublish } = input;
 
   const book = await prisma.book.findFirst({
     where: { slug },
@@ -158,7 +158,7 @@ export async function createChapterForUser(input: CreateChapterInput) {
   const nextIndex =
     (await prisma.chapter.count({ where: { bookId: book.id } })) + 1;
 
-  const isDraft = !publish;
+  const isDraft = !shouldPublish;
   const publishRole = userId === book.ownerId ? "OWNER" : "EDITOR";
 
   const created = await prisma.chapter.create({
@@ -177,7 +177,7 @@ export async function createChapterForUser(input: CreateChapterInput) {
   });
 
   // SSE: обновить список глав
-  emit("chapter:created", {
+  await publish("chapter:created", {
     slug,
     index: created.index,
     chapterId: created.id,
@@ -228,7 +228,7 @@ export async function createChapterForUser(input: CreateChapterInput) {
     });
 
     // 3) SSE: событие публикации для live-списка
-    emit("chapter:published", {
+    await publish("chapter:published", {
       slug,
       index: created.index,
       chapterId: created.id,

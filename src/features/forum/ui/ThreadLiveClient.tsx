@@ -1,7 +1,7 @@
 // src/components/ThreadLiveClient.tsx
 "use client";
 import { useRouter } from "next/navigation";
-import { useEventStream } from "@/hooks/useEventStream";
+import { useEventStream } from "@/features/realtime/client/useEventStream";
 
 type Props =
   | { threadId: string; category?: never; slug?: never }

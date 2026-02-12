@@ -7,7 +7,7 @@ import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getRole } from "@/server/access";
-import { emit } from "@/server/events";
+import { publish } from "@/features/realtime/server/bus";
 import { sanitizeHtml } from "@/server/render/sanitizeHtml";
 
 type Ctx = { params: Promise<{ slug: string; index: string }> };
@@ -226,7 +226,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
   });
 
   // эмит события после успешного обновления
-  await emit("chapter:updated", {
+  await publish("chapter:updated", {
     slug,
     index: idx,
     chapterId: updated.id,
@@ -236,7 +236,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   // если меняли publish — отдельный ивент
   if (wantsPublish && isOwner) {
-    await emit(data.publish ? "chapter:published" : "chapter:unpublished", {
+    await publish(data.publish ? "chapter:published" : "chapter:unpublished", {
       slug,
       index: idx,
       chapterId: updated.id,
@@ -246,7 +246,7 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
 
   // если меняли статус — отдельный ивент
   if (wantsStatus) {
-    await emit(`chapter:${data.status === "OPEN" ? "opened" : "closed"}`, {
+    await publish(`chapter:${data.status === "OPEN" ? "opened" : "closed"}`, {
       slug,
       index: idx,
       chapterId: updated.id,
@@ -294,7 +294,7 @@ export async function DELETE(_req: NextRequest, { params }: Ctx) {
 
   await prisma.chapter.delete({ where: { id: chapter.id } });
 
-  await emit("chapter:deleted", {
+  await publish("chapter:deleted", {
     slug,
     index: idx,
     chapterId: chapter.id,

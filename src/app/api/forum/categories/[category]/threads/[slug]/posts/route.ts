@@ -6,7 +6,7 @@ import { authOptions } from "@/server/auth";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { emit } from "@/server/events";
+import { publish } from "@/features/realtime/server/bus";
 import { isPlayer } from "@/server/player";
 import { restrictedCanPost, isAdminOnlyCategory } from "@/server/forumAcl";
 import { requireAdmin } from "@/server/admin";
@@ -134,7 +134,7 @@ if (effectiveVis === "ADMIN") {
     select: { id: true, threadId: true, createdAt: true },
   });
 
-  emit("thread:new_post", {
+  await publish("thread:new_post", {
     threadId: post.threadId,
     category,
     slug,
