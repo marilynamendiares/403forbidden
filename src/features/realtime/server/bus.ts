@@ -5,7 +5,6 @@ export type AppEventType =
   // forum
   | "thread:new_post"
   | "thread:post_deleted"
-
   // chapters
   | "chapter:created"
   | "chapter:updated"
@@ -18,6 +17,5 @@ export type AppEventType =
 export type AppEventPayload = Record<string, unknown>;
 
 export async function publish(type: AppEventType, payload: AppEventPayload) {
-  // единая точка контроля: можно логировать, добавлять envelope, scope и т.д.
   await emitRaw(type, payload);
 }
