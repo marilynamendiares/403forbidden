@@ -52,7 +52,6 @@ export async function emit(event: string, payload: unknown) {
       event,
       data: JSON.stringify(data),
     });
-    console.log("[SSE:xadd]", event);
   }
 
   // 2) In-memory fallback (и удобно для дев-окружений)

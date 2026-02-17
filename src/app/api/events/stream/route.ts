@@ -2,7 +2,12 @@
 export const runtime = "nodejs";
 
 import type { NextRequest } from "next/server";
-import { addClient, removeClient, clientCount, EVENTS_STREAM_KEY } from "@/server/events";
+import {
+  addClient,
+  removeClient,
+  clientCount,
+  EVENTS_STREAM_KEY,
+} from "@/server/events";
 
 async function getRedis() {
   try {
@@ -20,6 +25,8 @@ export async function GET(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const send = (s: string) => controller.enqueue(encoder.encode(s));
+      const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
       const id = crypto.randomUUID();
 
       let ka: ReturnType<typeof setInterval> | null = null;
@@ -53,7 +60,7 @@ export async function GET(req: NextRequest) {
         })}\n\n`,
       );
 
-      // keepalive
+      // keepalive (comment line)
       ka = setInterval(() => send(`: keepalive ${Date.now()}\n\n`), 15_000);
 
       // In-memory fallback (local/dev)
@@ -74,18 +81,24 @@ export async function GET(req: NextRequest) {
       // Redis mode
       // If this is a reconnect, browser may send Last-Event-ID
       const headerLast = req.headers.get("last-event-id");
-      let lastId = headerLast && headerLast.length > 0 ? headerLast : "$";
+      // "$" = only new entries; "0-0" would replay from start (DON'T)
+      let lastId =
+        headerLast && headerLast.length > 0 ? String(headerLast) : "$";
+
+      // Backoff to avoid hammering Upstash (REST xread does not block)
+      let backoffMs = 250; // start
+      const BACKOFF_MAX = 5000; // max 5s
 
       while (!aborted) {
         try {
-          const res = await (redis as any).xread(
-            EVENTS_STREAM_KEY,
-            lastId,
-            { blockMS: 20000, count: 100 },
-          );
-          if (!res) continue;
+          // NOTE: Upstash REST does NOT support blocking reads like Redis TCP does.
+          // So we explicitly backoff when there are no messages.
+          const res = await (redis as any).xread(EVENTS_STREAM_KEY, lastId, {
+            count: 100,
+          });
 
-          const streams = Array.isArray(res) ? res : [res];
+          const streams = Array.isArray(res) ? res : res ? [res] : [];
+          let pushed = 0;
 
           for (const stream of streams as any[]) {
             const entries = stream?.messages ?? stream?.[1] ?? [];
@@ -101,7 +114,9 @@ export async function GET(req: NextRequest) {
               if (Array.isArray(fields)) {
                 if (fields.length && typeof fields[0] === "string") {
                   const o: any = {};
-                  for (let i = 0; i < fields.length; i += 2) o[fields[i]] = fields[i + 1];
+                  for (let i = 0; i < fields.length; i += 2) {
+                    o[fields[i]] = fields[i + 1];
+                  }
                   fields = o;
                 } else {
                   fields = Object.fromEntries(fields);
@@ -109,7 +124,7 @@ export async function GET(req: NextRequest) {
               }
 
               if (!entryId) continue;
-              lastId = entryId;
+              lastId = String(entryId);
 
               const event = fields?.event ?? "message";
 
@@ -131,13 +146,27 @@ export async function GET(req: NextRequest) {
                 dataRaw = JSON.stringify(fields.data);
               }
 
-              send(`id: ${entryId}\n`);
+              send(`id: ${lastId}\n`);
               send(`event: ${event}\n`);
               send(`data: ${dataRaw}\n\n`);
+              pushed++;
             }
           }
+
+          // If nothing arrived, slow down polling
+          if (pushed === 0) {
+            const jitter = Math.floor(Math.random() * 150); // 0..149ms
+            await sleep(backoffMs + jitter);
+            backoffMs = Math.min(Math.floor(backoffMs * 1.5), BACKOFF_MAX);
+          } else {
+            // Messages received -> reset backoff for low latency
+            backoffMs = 250;
+          }
         } catch {
-          // keepalive keeps the connection alive; EventSource will reconnect if needed
+          // On errors: don't spin — backoff a bit
+          const jitter = Math.floor(Math.random() * 250); // 0..249ms
+          await sleep(Math.min(backoffMs, BACKOFF_MAX) + jitter);
+          backoffMs = Math.min(Math.floor(backoffMs * 1.5), BACKOFF_MAX);
         }
       }
     },

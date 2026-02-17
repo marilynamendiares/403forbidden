@@ -1,16 +1,23 @@
 // src/app/settings/profile/page.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { resolveMediaUrl } from "@/lib/media";
 
 type MeProfile = {
   username: string;
   displayName: string;
   bio: string | null;
-  avatarUrl: string | null;
+  avatarUrl: string | null; // key
   bannerUrl: string | null;
   user: { id: string };
+};
+
+type AvatarItem = {
+  id: string;
+  key: string; // key
+  createdAt: string;
 };
 
 export default function ProfileSettingsPage() {
@@ -20,23 +27,50 @@ export default function ProfileSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  // важно: username для Cancel
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
 
-  // avatar
+  // avatar upload
   const [file, setFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>("No file chosen");
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
-  const [currentAvatar, setCurrentAvatar] = useState<string | null>(null);
+  const [currentAvatar, setCurrentAvatar] = useState<string | null>(null); // key
+  const [avatarBuster, setAvatarBuster] = useState<number>(0);
 
-  // Подтянуть текущие данные
+  // avatar library
+  const [avatars, setAvatars] = useState<AvatarItem[]>([]);
+
+  // cleanup objectURL
+  useEffect(() => {
+    return () => {
+      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
+    };
+  }, [avatarPreview]);
+
+  const currentAvatarSrc = useMemo(() => {
+    const base = resolveMediaUrl(currentAvatar) || null;
+    if (!base) return null;
+    const glue = base.includes("?") ? "&" : "?";
+    return `${base}${glue}v=${avatarBuster || 0}`;
+  }, [currentAvatar, avatarBuster]);
+
+  async function refreshAvatarLibrary() {
+    const r = await fetch("/api/profile/avatars", { cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json().catch(() => null);
+    const items: AvatarItem[] = Array.isArray(j?.items) ? j.items : [];
+    setAvatars(items);
+  }
+
+  // initial load
   useEffect(() => {
     let abort = false;
+
     (async () => {
       setLoading(true);
       setError(null);
+
       try {
         const r = await fetch("/api/profile", { cache: "no-store" });
         if (r.status === 401) {
@@ -49,12 +83,18 @@ export default function ProfileSettingsPage() {
           setLoading(false);
           return;
         }
+
         const me: MeProfile = await r.json();
+
         if (!abort) {
           setUsername(me.username || "");
           setDisplayName(me.displayName ?? "");
           setBio(me.bio ?? "");
           setCurrentAvatar(me.avatarUrl);
+        }
+
+        if (!abort) {
+          await refreshAvatarLibrary();
         }
       } catch (e: any) {
         if (!abort) setError(e?.message || "Failed to load profile");
@@ -62,32 +102,42 @@ export default function ProfileSettingsPage() {
         if (!abort) setLoading(false);
       }
     })();
+
     return () => {
       abort = true;
     };
   }, []);
 
-  // Загрузка файла в R2 → publicUrl
+  // init + PUT → returns key
   async function uploadAvatar(): Promise<string | null> {
     if (!file) return null;
 
     const ext = (file.name.split(".").pop() || "png").toLowerCase();
-    const r = await fetch("/api/upload/avatar", {
+    const init = await fetch("/api/upload/avatar", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ contentType: file.type, ext }),
     });
-    if (!r.ok) {
-      setError("Failed to init avatar upload");
+
+if (!init.ok) {
+  const txt = await init.text().catch(() => "");
+  setError(`Could not init avatar upload (${init.status}) ${txt}`.trim());
+  return null;
+}
+
+    const { uploadUrl, key, maxBytes, allowed } = await init.json();
+
+    if (!key || typeof key !== "string") {
+      setError("Upload init returned invalid key");
       return null;
     }
-    const { uploadUrl, publicUrl, maxBytes, allowed } = await r.json();
 
-    if (file.size > maxBytes) {
+    if (typeof maxBytes === "number" && file.size > maxBytes) {
       setError("Image is too large");
       return null;
     }
-    if (!allowed.includes(file.type)) {
+
+    if (Array.isArray(allowed) && !allowed.includes(file.type)) {
       setError("Unsupported image type");
       return null;
     }
@@ -101,11 +151,84 @@ export default function ProfileSettingsPage() {
       },
       body: file,
     });
+
     if (!put.ok) {
       setError(`Upload failed (${put.status})`);
       return null;
     }
-    return publicUrl as string;
+
+    return key as string;
+  }
+
+  async function setActiveAvatar(key: string) {
+    setSaving(true);
+    setError(null);
+    setOk(null);
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: displayName.trim(),
+          bio: bio.trim(),
+          avatarUrl: key,
+        }),
+      });
+
+      if (!res.ok) {
+        const msg = (await res.text()) || "Save failed";
+        setError(msg);
+        return;
+      }
+
+      const updated: MeProfile = await res.json();
+      setCurrentAvatar(updated.avatarUrl);
+      setAvatarBuster(Date.now());
+      setOk("Saved");
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAvatar(id: string) {
+    setSaving(true);
+    setError(null);
+    setOk(null);
+
+    try {
+      const r = await fetch("/api/profile/avatars", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+
+      if (!r.ok && r.status !== 204) {
+        const msg = (await r.text()) || "Delete failed";
+        setError(msg);
+        return;
+      }
+
+      await refreshAvatarLibrary();
+
+      // подтянуть профиль заново (на случай если удалили активную и она сбросилась)
+      const meRes = await fetch("/api/profile", { cache: "no-store" });
+      if (meRes.ok) {
+        const me: MeProfile = await meRes.json();
+        setCurrentAvatar(me.avatarUrl);
+        setAvatarBuster(Date.now());
+      }
+
+      setOk("Deleted");
+      router.refresh();
+    } catch (e: any) {
+      setError(e?.message || "Delete failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
@@ -113,11 +236,13 @@ export default function ProfileSettingsPage() {
     setSaving(true);
     setError(null);
     setOk(null);
+
     try {
-      let uploadedUrl: string | null = null;
+      let uploadedKey: string | null = null;
+
       if (file) {
-        uploadedUrl = await uploadAvatar();
-        if (!uploadedUrl) return; // ошибка уже показана
+        uploadedKey = await uploadAvatar();
+        if (!uploadedKey) return; // error already set
       }
 
       const res = await fetch("/api/profile", {
@@ -126,9 +251,10 @@ export default function ProfileSettingsPage() {
         body: JSON.stringify({
           displayName: displayName.trim(),
           bio: bio.trim(),
-          ...(uploadedUrl ? { avatarUrl: uploadedUrl } : {}),
+          ...(uploadedKey ? { avatarUrl: uploadedKey } : {}),
         }),
       });
+
       if (!res.ok) {
         const msg = (await res.text()) || "Save failed";
         setError(msg);
@@ -137,17 +263,21 @@ export default function ProfileSettingsPage() {
 
       const updated: MeProfile = await res.json();
 
-      // моментально показать новую картинку + пробить кеш
-      let finalUrl = uploadedUrl ?? updated.avatarUrl ?? null;
-      if (finalUrl) {
-        finalUrl = `${finalUrl}${finalUrl.includes("?") ? "&" : "?"}v=${Date.now()}`;
-      }
-      setCurrentAvatar(finalUrl);
-      setAvatarPreview(null);
+      const finalKey = uploadedKey ?? updated.avatarUrl ?? null;
+      setCurrentAvatar(finalKey);
+      setAvatarBuster(Date.now());
+
+      // очистка выбора файла
+      setAvatarPreview((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return null;
+      });
       setFile(null);
       setFileName("No file chosen");
 
       setUsername(updated.username || username);
+
+      await refreshAvatarLibrary();
 
       setOk("Saved");
       router.refresh();
@@ -170,7 +300,7 @@ export default function ProfileSettingsPage() {
         </div>
       ) : (
         <form onSubmit={onSubmit} className="flex flex-col gap-6">
-          {/* Аватар + красивый файл-пикер */}
+          {/* Avatar */}
           <div>
             <label className="block text-sm font-medium mb-2">Avatar</label>
 
@@ -178,38 +308,113 @@ export default function ProfileSettingsPage() {
               <div className="h-24 w-24 rounded-full overflow-hidden ring-1 ring-black/10 bg-neutral-800 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={avatarPreview || currentAvatar || "/default-avatar.svg"}
+                  src={avatarPreview || currentAvatarSrc || "/default-avatar.svg"}
                   alt="avatar preview"
                   className="h-full w-full object-cover"
                 />
               </div>
 
               <div className="flex flex-col gap-1">
-                {/* Кнопка-лейбл: выглядит как нативная */}
                 <label
                   htmlFor="avatar"
                   className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-neutral-700 px-3 py-2 text-sm hover:bg-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-500"
                 >
                   Choose file
                 </label>
+
                 <input
                   id="avatar"
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   className="sr-only"
                   onChange={(e) => {
-                    const f = e.target.files?.[0] || null;
-                    setFile(f);
-                    setFileName(f ? f.name : "No file chosen");
-                    setAvatarPreview(f ? URL.createObjectURL(f) : null);
+                    const f = e.currentTarget.files?.[0] ?? null;
+
                     setOk(null);
                     setError(null);
+
+                    // cleanup старого preview
+                    setAvatarPreview((prev) => {
+                      if (prev) URL.revokeObjectURL(prev);
+                      return null;
+                    });
+
+                    if (!f) {
+                      setFile(null);
+                      setFileName("No file chosen");
+                      return;
+                    }
+
+                    const MAX = 500 * 1024; // 500KB
+                    if (f.size > MAX) {
+                      setError("Avatar is too large. Max size is 500 KB.");
+                      e.currentTarget.value = "";
+                      setFile(null);
+                      setFileName("No file chosen");
+                      return;
+                    }
+
+                    if (!/^image\/(png|jpeg|webp)$/.test(f.type)) {
+                      setError("Unsupported image type. Use PNG, JPG, or WebP.");
+                      e.currentTarget.value = "";
+                      setFile(null);
+                      setFileName("No file chosen");
+                      return;
+                    }
+
+                    setFile(f);
+                    setFileName(f.name);
+                    setAvatarPreview(URL.createObjectURL(f));
                   }}
                 />
+
                 <span className="text-xs opacity-70">{fileName}</span>
-                <p className="text-xs opacity-70">PNG/JPEG/WebP, до ~1.2MB</p>
+                <p className="text-xs opacity-70">PNG/JPEG/WebP, up to 500 KB</p>
               </div>
             </div>
+
+            {/* Previous avatars */}
+            {avatars.length > 0 && (
+              <div className="mt-4 rounded-md border border-neutral-800 p-3">
+                <div className="text-sm font-medium mb-2">
+                  Previous avatars (max 5)
+                </div>
+
+                <div className="grid grid-cols-5 gap-2">
+                  {avatars.map((a) => (
+                    <div key={a.id} className="flex flex-col items-center gap-2">
+                      <button
+                        type="button"
+                        className="h-14 w-14 rounded-full overflow-hidden ring-1 ring-neutral-700 hover:ring-neutral-400"
+                        onClick={() => setActiveAvatar(a.key)}
+                        title="Set as active"
+                        disabled={saving}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={resolveMediaUrl(a.key) || "/default-avatar.svg"}
+                          alt="avatar"
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
+
+                      <button
+                        type="button"
+                        className="text-[11px] opacity-70 hover:opacity-100 underline"
+                        onClick={() => deleteAvatar(a.id)}
+                        disabled={saving}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-xs opacity-70 mt-3">
+                  Click an avatar to set it active.
+                </p>
+              </div>
+            )}
           </div>
 
           <div>

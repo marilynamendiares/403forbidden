@@ -38,27 +38,35 @@ async function toWebStream(body: any): Promise<ReadableStream<Uint8Array>> {
 
 export async function GET(req: NextRequest) {
   // DEBUG PING
-  if (req.nextUrl.searchParams.get("__ping") === "1") {
-    return new Response(
-      JSON.stringify({
-        ok: true,
-        route: "/api/uploads/images",
-        hasBucket: !!process.env.R2_BUCKET,
-        hasEndpoint: !!process.env.R2_ENDPOINT,
-        hasKey: !!process.env.R2_ACCESS_KEY_ID,
-        hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
-        region: process.env.R2_REGION ?? "auto",
-      }),
-      {
-        status: 200,
-        headers: {
-          "content-type": "application/json",
-          "cache-control": "no-store",
-          "x-uploads-images": "ping-v2",
-        },
-      }
-    );
+if (req.nextUrl.searchParams.get("__ping") === "1") {
+  if (process.env.NODE_ENV === "production") {
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json", "cache-control": "no-store" },
+    });
   }
+
+  return new Response(
+    JSON.stringify({
+      ok: true,
+      route: "/api/uploads/images",
+      hasBucket: !!process.env.R2_BUCKET,
+      hasEndpoint: !!process.env.R2_ENDPOINT,
+      hasKey: !!process.env.R2_ACCESS_KEY_ID,
+      hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
+      region: process.env.R2_REGION ?? "auto",
+    }),
+    {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+        "cache-control": "no-store",
+        "x-uploads-images": "ping-v2",
+      },
+    }
+  );
+}
+
 
   const raw = req.nextUrl.searchParams.get("key")?.trim() ?? "";
   const key = raw.replace(/^\/+/, "");

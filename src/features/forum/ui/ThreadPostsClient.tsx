@@ -70,11 +70,7 @@ export default function ThreadPostsClient({
       if (lastId) url.searchParams.set("afterId", lastId);
       url.searchParams.set("take", "100");
 
-
-      console.log("[fetchNew] url =", url.toString());
-
       const res = await fetch(url.toString(), { cache: "no-store" });
-      console.log("[fetchNew] status =", res.status);
 
       if (!res.ok) return;
 
