@@ -1,131 +1,102 @@
-// src/hooks/useEventStream.ts
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo } from "react";
 
-/**
- * Карта обработчиков:
- * - ключ "message" — обработчик дефолтного события (без имени)
- * - любые другие ключи — именованные события (event: <name>)
- * - если сервер шлёт default-события формата { type: string, ... },
- *   хук сам пробросит их в handlers[type], если такой есть.
- */
-export type HandlerMap = Partial<Record<string, (data: any) => void>>;
+type Handler = (payload: any) => void;
+type HandlersMap = Record<string, Handler>;
 
-type UseEventStreamOptions = {
-  /** Если бэкенд поддерживает подписку по топику (?topic=notify:user:<id>) */
-  topic?: string;
-  /** Доп. query-параметры к /api/events/stream */
-  query?: Record<string, string | number | boolean | undefined>;
-  /** Прокинуть withCredentials (по умолчанию true для cookie-сессий) */
-  withCredentials?: boolean;
-  /** Колбэки статуса */
-  onOpen?: () => void;
-  onError?: (e: any) => void;
-  /** Путь до SSE-стрима (по умолчанию /api/events/stream) */
-  url?: string;
+type Subscriber = {
+  handlers: HandlersMap;
 };
 
-function safeParseJSON(raw: any) {
-  if (raw == null) return null;
-  if (typeof raw !== "string") return raw;
+let ES: EventSource | null = null;
+let SUBS: Subscriber[] = [];
+let REFCOUNT = 0;
+
+function ensureES(url: string) {
+  if (ES) return;
+
+  ES = new EventSource(url);
+
+  ES.onmessage = (ev) => {
+    // default event
+    const payload = safeJson(ev.data);
+    for (const sub of SUBS) sub.handlers["message"]?.(payload);
+  };
+
+  ES.addEventListener("hello", (ev) => {
+    const payload = safeJson((ev as MessageEvent).data);
+    for (const sub of SUBS) sub.handlers["hello"]?.(payload);
+  });
+
+  // generic dispatcher for named events
+  // IMPORTANT: EventSource doesn't give us event name in onmessage,
+  // so we attach listeners lazily per event name via addEventListener below.
+}
+
+function safeJson(s: any) {
+  if (typeof s !== "string") return s;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(s);
   } catch {
-    return raw;
+    return { value: s };
   }
 }
 
-/**
- * useEventStream — лёгкий хук для подписки на SSE.
- *
- * Примеры:
- *   useEventStream({ ["notify:user:" + userId]: () => mutate() });
- *   useEventStream({ message: onAny }, { topic: "notify:user:" + userId });
- *   useEventStream({ "chapter:updated": onUpd, "thread:new_post": onNew });
- */
-export function useEventStream(handlers: HandlerMap, opts: UseEventStreamOptions = {}) {
-  // храним актуальные handlers/opts в ref, чтобы не рвать соединение без нужды
-  const handlersRef = useRef<HandlerMap>(handlers);
-  const optsRef = useRef<UseEventStreamOptions>(opts);
-  handlersRef.current = handlers;
-  optsRef.current = opts;
+function attachNamedListeners(url: string, eventNames: string[]) {
+  ensureES(url);
+  if (!ES) return;
 
-  // мемоизируем URL со всеми query
-  const endpoint = useMemo(() => {
-    const base = opts.url ?? "/api/events/stream";
-    const url = new URL(base, typeof window !== "undefined" ? window.location.origin : "http://localhost");
-    if (opts.topic) url.searchParams.set("topic", opts.topic);
-    if (opts.query) {
-      for (const [k, v] of Object.entries(opts.query)) {
-        if (v !== undefined) url.searchParams.set(k, String(v));
-      }
-    }
-    return url.toString();
-    // менять URL только при реальном изменении opts.url/topic/query
-  }, [opts.url, opts.topic, JSON.stringify(opts.query)]);
+  for (const name of eventNames) {
+    if (name === "message" || name === "hello") continue;
 
-  // следим за составом именованных событий — чтобы корректно навесить/снять листенеры
-  const eventNames = useMemo(
-    () => Object.keys(handlers).filter((n) => n !== "message"),
-    [handlers]
-  );
-
-  useEffect(() => {
-    // создаём EventSource
-    const es = new EventSource(endpoint, {
-      withCredentials: optsRef.current.withCredentials ?? true,
+    ES.addEventListener(name, (ev) => {
+      const payload = safeJson((ev as MessageEvent).data);
+      for (const sub of SUBS) sub.handlers[name]?.(payload);
     });
-
-    // дефолтные сообщения (event: message)
-    es.onmessage = (ev) => {
-      const data = safeParseJSON(ev.data);
-
-      // если это ping/noop — игнор
-      if (data && (data.type === "ping" || data.kind === "ping")) return;
-
-      // если сервер шлёт {type: "..."} — пробросим в одноимённый хендлер
-      const t = data?.type as string | undefined;
-      if (t && handlersRef.current[t]) {
-        try {
-          handlersRef.current[t]?.(data);
-          return;
-        } catch (e) {
-          // не прерываем — дадим шанс "message"
-        }
-      }
-
-      // иначе — общий message
-      handlersRef.current["message"]?.(data);
-    };
-
-    // именованные события
-const attached: Array<{ name: string; fn: EventListener }> = [];
-
-for (const name of eventNames) {
-  const listener: EventListener = (evt) => {
-    const e = evt as MessageEvent;
-    const data = safeParseJSON(e.data);
-    handlersRef.current[name]?.(data);
-  };
-
-  es.addEventListener(name, listener);
-  attached.push({ name, fn: listener });
+  }
 }
 
+function maybeCloseES() {
+  if (REFCOUNT > 0) return;
+  if (ES) {
+    try {
+      ES.close();
+    } catch {}
+  }
+  ES = null;
+  SUBS = [];
+}
 
+/**
+ * useEventStream — singleton EventSource for the whole tab.
+ * Multiple calls won't create multiple network connections.
+ */
+export function useEventStream(handlers: HandlersMap) {
+  const url = "/api/events/stream";
 
-    es.onopen = () => optsRef.current.onOpen?.();
-    es.onerror = (e) => {
-      optsRef.current.onError?.(e);
-      // EventSource сам реконнектится; вручную не закрываем.
-    };
+  const eventNames = useMemo(() => Object.keys(handlers), [handlers]);
+
+  useEffect(() => {
+    REFCOUNT += 1;
+
+    // register subscriber
+    const sub: Subscriber = { handlers };
+    SUBS.push(sub);
+
+    // attach listeners for currently needed event names
+    attachNamedListeners(url, eventNames);
 
     return () => {
-      // снимаем именованные обработчики и закрываем стрим
-      attached.forEach(({ name, fn }) => es.removeEventListener(name, fn));
-      es.close();
+      // unregister subscriber
+      SUBS = SUBS.filter((s) => s !== sub);
+
+      REFCOUNT -= 1;
+      if (REFCOUNT < 0) REFCOUNT = 0;
+
+      // close connection when nobody needs it
+      maybeCloseES();
     };
-    // переподключение: при смене endpoint или набора именованных событий
-    }, [endpoint, eventNames.join("|")]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, eventNames.join("|")]);
 }
