@@ -2,36 +2,51 @@
 
 import { useEffect, useMemo } from "react";
 
-type Handler = (payload: any) => void;
-type HandlersMap = Record<string, Handler>;
+export type Handler = (payload: any) => void;
+export type HandlerMap = Record<string, Handler>;
 
-type Subscriber = {
-  handlers: HandlersMap;
+export type EventStreamOptions = {
+  /** базовый URL (по умолчанию /api/events/stream) */
+  url?: string;
+  /** если когда-то захочешь прокидывать topic */
+  topic?: string;
+  /** query-параметры */
+  query?: Record<string, string | number | boolean | undefined>;
+  /** нативный EventSource не поддерживает credentials; оставляем для совместимости */
+  withCredentials?: boolean;
+  onOpen?: () => void;
+  onError?: (e: any) => void;
 };
 
-let ES: EventSource | null = null;
-let SUBS: Subscriber[] = [];
-let REFCOUNT = 0;
+type Subscriber = { handlers: HandlerMap };
 
-function ensureES(url: string) {
-  if (ES) return;
+// --- HMR/StrictMode-safe singleton state (живёт на globalThis) ---
+type ESState = {
+  es: EventSource | null;
+  url: string | null;
+  subs: Subscriber[];
+  refcount: number;
+  // чтобы не навешивать addEventListener(name) много раз
+  attachedNames: Set<string>;
+  // чтобы понимать, что мы уже проставили базовые хендлеры
+  inited: boolean;
+};
 
-  ES = new EventSource(url);
+const GKEY = "__403_ES_STATE__";
 
-  ES.onmessage = (ev) => {
-    // default event
-    const payload = safeJson(ev.data);
-    for (const sub of SUBS) sub.handlers["message"]?.(payload);
-  };
-
-  ES.addEventListener("hello", (ev) => {
-    const payload = safeJson((ev as MessageEvent).data);
-    for (const sub of SUBS) sub.handlers["hello"]?.(payload);
-  });
-
-  // generic dispatcher for named events
-  // IMPORTANT: EventSource doesn't give us event name in onmessage,
-  // so we attach listeners lazily per event name via addEventListener below.
+function getState(): ESState {
+  const g = globalThis as any;
+  if (!g[GKEY]) {
+    g[GKEY] = {
+      es: null,
+      url: null,
+      subs: [],
+      refcount: 0,
+      attachedNames: new Set<string>(),
+      inited: false,
+    } satisfies ESState;
+  }
+  return g[GKEY] as ESState;
 }
 
 function safeJson(s: any) {
@@ -43,58 +58,127 @@ function safeJson(s: any) {
   }
 }
 
+function buildUrl(opts?: EventStreamOptions) {
+  const base = opts?.url ?? "/api/events/stream";
+  const u = new URL(base, window.location.origin);
+
+  if (opts?.topic) u.searchParams.set("topic", opts.topic);
+
+  if (opts?.query) {
+    for (const [k, v] of Object.entries(opts.query)) {
+      if (v === undefined) continue;
+      u.searchParams.set(k, String(v));
+    }
+  }
+
+  return u.pathname + (u.search ? u.search : "");
+}
+
+function ensureES(url: string, opts?: EventStreamOptions) {
+  const st = getState();
+
+  // если URL изменился — закрываем старый ES и сбрасываем listeners
+  if (st.es && st.url && st.url !== url) {
+    try {
+      st.es.close();
+    } catch {}
+    st.es = null;
+    st.url = null;
+    st.attachedNames.clear();
+    st.inited = false;
+  }
+
+  if (st.es) return;
+
+  st.es = new EventSource(url);
+  st.url = url;
+
+  // базовые события
+  if (!st.inited && st.es) {
+    st.inited = true;
+
+    st.es.onopen = () => {
+      opts?.onOpen?.();
+    };
+
+    st.es.onerror = (e) => {
+      opts?.onError?.(e);
+    };
+
+    st.es.onmessage = (ev) => {
+      const payload = safeJson(ev.data);
+      for (const sub of st.subs) sub.handlers["message"]?.(payload);
+    };
+
+    st.es.addEventListener("hello", (ev) => {
+      const payload = safeJson((ev as MessageEvent).data);
+      for (const sub of st.subs) sub.handlers["hello"]?.(payload);
+    });
+  }
+}
+
 function attachNamedListeners(url: string, eventNames: string[]) {
+  const st = getState();
   ensureES(url);
-  if (!ES) return;
+
+  if (!st.es) return;
 
   for (const name of eventNames) {
     if (name === "message" || name === "hello") continue;
 
-    ES.addEventListener(name, (ev) => {
+    // важно: не добавлять один и тот же listener много раз
+    if (st.attachedNames.has(name)) continue;
+    st.attachedNames.add(name);
+
+    st.es.addEventListener(name, (ev) => {
       const payload = safeJson((ev as MessageEvent).data);
-      for (const sub of SUBS) sub.handlers[name]?.(payload);
+      for (const sub of st.subs) sub.handlers[name]?.(payload);
     });
   }
 }
 
 function maybeCloseES() {
-  if (REFCOUNT > 0) return;
-  if (ES) {
+  const st = getState();
+  if (st.refcount > 0) return;
+
+  if (st.es) {
     try {
-      ES.close();
+      st.es.close();
     } catch {}
   }
-  ES = null;
-  SUBS = [];
+
+  st.es = null;
+  st.url = null;
+  st.subs = [];
+  st.attachedNames.clear();
+  st.inited = false;
 }
 
 /**
  * useEventStream — singleton EventSource for the whole tab.
  * Multiple calls won't create multiple network connections.
  */
-export function useEventStream(handlers: HandlersMap) {
-  const url = "/api/events/stream";
+export function useEventStream(handlers: HandlerMap, opts?: EventStreamOptions) {
+  const url = useMemo(() => buildUrl(opts), [opts?.url, opts?.topic, JSON.stringify(opts?.query ?? {})]);
 
   const eventNames = useMemo(() => Object.keys(handlers), [handlers]);
 
   useEffect(() => {
-    REFCOUNT += 1;
+    const st = getState();
+    st.refcount += 1;
 
-    // register subscriber
     const sub: Subscriber = { handlers };
-    SUBS.push(sub);
+    st.subs.push(sub);
 
-    // attach listeners for currently needed event names
     attachNamedListeners(url, eventNames);
 
     return () => {
-      // unregister subscriber
-      SUBS = SUBS.filter((s) => s !== sub);
+      const st2 = getState();
+      st2.subs = st2.subs.filter((s) => s !== sub);
 
-      REFCOUNT -= 1;
-      if (REFCOUNT < 0) REFCOUNT = 0;
+      st2.refcount -= 1;
+      if (st2.refcount < 0) st2.refcount = 0;
 
-      // close connection when nobody needs it
       maybeCloseES();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
