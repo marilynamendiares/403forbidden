@@ -1,6 +1,7 @@
 "use client";
 import { signIn } from "next-auth/react";
 import { useMemo, useState } from "react";
+import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 
 function normalizeNext(sp: URLSearchParams) {
@@ -16,6 +17,14 @@ function normalizeNext(sp: URLSearchParams) {
 }
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-sm py-16 text-sm opacity-70">Loading…</div>}>
+      <LoginPageInner />
+    </Suspense>
+  );
+}
+
+function LoginPageInner() {
   const searchParams = useSearchParams();
   const callbackUrl = useMemo(() => normalizeNext(searchParams), [searchParams]);
 
