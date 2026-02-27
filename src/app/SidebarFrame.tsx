@@ -48,7 +48,7 @@ export default function SidebarFrame({ topBar, children }: Props) {
 
   const sidebarHoverNudgePx = useMemo(() => {
     if (!sidebarOpen || !brandHover) return 0;
-    if (leftRailPx > 150) return 0;
+    if (leftRailPx >= 250) return 0;
     // Restore a bit of left space for logo hover, capped to avoid layout jumps.
     return Math.min(120, Math.max(0, 220 - leftRailPx));
   }, [brandHover, leftRailPx, sidebarOpen]);
