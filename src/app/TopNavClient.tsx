@@ -3,128 +3,105 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect } from "react";
 
-type Item = {
-  href: string;
-  label: string;
-  num: string;
-};
-
-const ITEMS: Item[] = [
+const NAV = [
   { href: "/forum", label: "F0RUM", num: "01" },
-  { href: "/world", label: "W0RLD", num: "02" },
-  { href: "/players", label: "PLAYERS", num: "03" },
-  { href: "/books", label: "B00KS", num: "04" },
-];
+  { href: "/arcs", label: "ARCS", num: "02" },
+  { href: "/pager", label: "PAGER", num: "03" },
+  { href: "/users", label: "USERS", num: "04" },
+] as const;
 
-function isActive(pathname: string, href: string) {
-  if (href === "/") return pathname === "/";
+function isActive(pathname: string, href: (typeof NAV)[number]["href"]) {
+  if (href === "/forum") return pathname === "/forum" || pathname.startsWith("/forum/");
   return pathname === href || pathname.startsWith(href + "/");
+}
+
+function setHoleVars() {
+  const activeEl = document.querySelector(
+    '[data-topnav-item="true"][data-active="true"]'
+  ) as HTMLElement | null;
+  if (!activeEl) return;
+
+  const panel = activeEl.closest("[data-shell-panel]") as HTMLElement | null;
+  if (!panel) return;
+
+  const pRect = panel.getBoundingClientRect();
+  const aRect = activeEl.getBoundingClientRect();
+
+  const x = Math.max(0, aRect.left - pRect.left);
+  const w = Math.max(0, aRect.width);
+
+  panel.style.setProperty("--hole-x", `${x}px`);
+  panel.style.setProperty("--hole-w", `${w}px`);
 }
 
 export default function TopNavClient() {
   const pathname = usePathname();
-
-  const activeIdx = useMemo(() => {
-    if (pathname === "/") return -1; // ✅ главная — ничего не активно
-    return ITEMS.findIndex((it) => isActive(pathname, it.href));
-  }, [pathname]);
-
-  const linkRefs = useRef<Array<HTMLAnchorElement | null>>([]);
-  const navRef = useRef<HTMLDivElement | null>(null);
-
-  const [indicator, setIndicator] = useState<{ left: number; width: number }>({
-    left: 0,
-    width: 0,
-  });
-
-const tabClass = (active: boolean) =>
-  [
-    "relative inline-flex items-center gap-2",
-    "px-4 py-2",
-    "uppercase tracking-[0.22em]",
-    "text-[12px] leading-none",
-    // NOTE: remove font-mono so it inherits Archimoto from header
-    "transition",
-    "rounded-none",
-    active
-      ? "bg-foreground text-neutral-900"
-      : "text-neutral-500 hover:text-neutral-300",
-  ].join(" ");
-
-
-  const numClass = (active: boolean) =>
-    [
-      "text-[12px] leading-none tabular-nums",
-      active ? "text-neutral-400" : "text-white/90",
-    ].join(" ");
-
-  const recalc = () => {
-    if (activeIdx < 0) return; // ✅ нет активной вкладки — не считаем
-    const nav = navRef.current;
-    const el = linkRefs.current[activeIdx];
-    if (!nav || !el) return;
-
-    const navRect = nav.getBoundingClientRect();
-    const elRect = el.getBoundingClientRect();
-
-    setIndicator({
-      left: elRect.left - navRect.left,
-      width: elRect.width,
-    });
-  };
+  const tabWidth = "calc((var(--right-rail-w) - 72px) / 3)";
 
   useLayoutEffect(() => {
-    recalc();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx]);
+    setHoleVars();
 
-  useEffect(() => {
-    const onResize = () => recalc();
+    const onResize = () => setHoleVars();
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeIdx]);
 
-return (
-  <nav className="flex items-center justify-center header-font-archimoto">
-    <div
-      ref={navRef}
-      className="relative inline-flex items-center justify-center gap-6"
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => setHoleVars());
+      const panel = document.querySelector("[data-shell-panel]") as HTMLElement | null;
+      if (panel) ro.observe(panel);
+    }
+
+    return () => {
+      window.removeEventListener("resize", onResize);
+      ro?.disconnect();
+    };
+  }, [pathname]);
+
+  return (
+    <nav
+      className="h-full flex items-stretch"
+      style={{
+        background: "transparent",
+        width: `calc(${tabWidth} * 4)`,
+      }}
     >
-      {ITEMS.map((it, idx) => {
-        const active = idx === activeIdx;
+      {NAV.map((item) => {
+        const active = isActive(pathname, item.href);
 
         return (
           <Link
-            key={it.href}
-            href={it.href}
-            ref={(node) => {
-              linkRefs.current[idx] = node;
+            key={item.href}
+            href={item.href}
+            data-topnav-item="true"
+            data-active={active ? "true" : "false"}
+            className={[
+              "h-full",
+              "shrink-0",
+              "inline-flex items-center justify-center",
+              "select-none",
+              "uppercase",
+              "text-[15px] leading-none",
+              "header-font-archimoto",
+            ].join(" ")}
+            style={{
+              width: tabWidth,
+              // inactive tabs are painted by the topbar chrome strip underneath
+              // active is a hole to the sidebar background
+              background: "transparent",
             }}
-            className={tabClass(active)}
           >
-            <span>{it.label}</span>
-            <span className={numClass(active)}>{it.num}</span>
+            <span style={{ color: active ? "rgba(217,217,217,0.70)" : "#111" }}>
+              {item.label}
+            </span>
+
+            <span className="ml-2" style={{ color: active ? "#FFFFFF" : "rgba(0,0,0,0.45)" }}>
+              {item.num}
+            </span>
           </Link>
         );
       })}
-
-      {/* baseline line: exactly under tab group width */}
-      <div className="absolute left-0 right-0 -bottom-3 h-px bg-white/10" />
-
-      {/* active indicator: positioned relative to tab group */}
-      {activeIdx >= 0 && (
-        <div
-          className="absolute -bottom-3 h-0.5 bg-white transition-[left,width] duration-200 ease-out"
-          style={{
-            left: indicator.left,
-            width: indicator.width,
-          }}
-        />
-      )}
-    </div>
-  </nav>
-);
+    </nav>
+  );
 }

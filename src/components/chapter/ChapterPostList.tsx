@@ -201,7 +201,7 @@ return (
   <div className="pt-6 flex justify-end">
     {nextChapterIndex ? (
       <a
-        href={`/books/${slug}/${nextChapterIndex}`}
+        href={`/arcs/${slug}/${nextChapterIndex}`}
         className="inline-flex items-center gap-2 rounded-md border border-white/30 
                    px-4 py-2 text-sm text-white hover:bg-white hover:text-black 
                    transition"

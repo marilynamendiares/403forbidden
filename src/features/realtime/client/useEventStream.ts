@@ -60,19 +60,24 @@ function safeJson(s: any) {
 
 function buildUrl(opts?: EventStreamOptions) {
   const base = opts?.url ?? "/api/events/stream";
-  const u = new URL(base, window.location.origin);
 
-  if (opts?.topic) u.searchParams.set("topic", opts.topic);
+  // ✅ SSR-safe: do not touch window at all.
+  // We always return a relative URL with query string.
+  const qs = new URLSearchParams();
+
+  if (opts?.topic) qs.set("topic", opts.topic);
 
   if (opts?.query) {
     for (const [k, v] of Object.entries(opts.query)) {
       if (v === undefined) continue;
-      u.searchParams.set(k, String(v));
+      qs.set(k, String(v));
     }
   }
 
-  return u.pathname + (u.search ? u.search : "");
+  const q = qs.toString();
+  return q ? `${base}?${q}` : base;
 }
+
 
 function ensureES(url: string, opts?: EventStreamOptions) {
   const st = getState();

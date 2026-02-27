@@ -57,6 +57,55 @@
   --white: #FFFFFF;
 }
 
+:root {
+  --art-max: 1920px;
+  --center: 950px;
+  --rail-max: 485px;
+
+  /* текущая ширина артборда */
+  --W: min(100vw, var(--art-max));
+
+  /* left rail появляется только когда есть место сверх (center + rightRailMax) */
+  --left-rail: clamp(0px, calc(var(--W) - var(--center) - var(--rail-max)), var(--rail-max));
+
+  /* 0..1 */
+  --left-alpha: calc(var(--left-rail) / var(--rail-max));
+
+  /* ✅ fade starts only after 50% rail is already gone:
+     if left-alpha >= 0.5 => fade-alpha = 1
+     if left-alpha < 0.5  => linear down to 0
+  */
+  --fade-alpha: clamp(0, calc(var(--left-alpha) * 2), 1);
+  --fade-inv: calc(1 - var(--fade-alpha));
+}
+
+/* когда sidebar открыт — “рассеивать” по порогу */
+html[data-sidebar-open="1"] .global-brand {
+  opacity: var(--fade-alpha);
+  transform: translateX(calc(var(--fade-inv) * -18px));
+  filter: blur(calc(var(--fade-inv) * 6px));
+}
+
+/* когда sidebar закрыт — бренд всегда 1 */
+html:not([data-sidebar-open="1"]) .global-brand {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+html[data-sidebar-open="1"] .global-brand:hover,
+html[data-sidebar-open="1"] .global-brand:focus-within {
+  opacity: 1;
+  transform: none;
+  filter: none;
+}
+
+/* плавность */
+.global-brand {
+  transition: opacity 300ms ease, transform 300ms ease, filter 300ms ease;
+  will-change: opacity, transform, filter;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -75,10 +124,8 @@
 }
 
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+html, body {
+  background: #000000;
 }
 
 .terminal-title {
@@ -86,24 +133,15 @@ body {
   display: inline-block;
 }
 
-.terminal-title::after {
-  content: "";
-  position: absolute;
-
-  left: calc(100% + 6px); /* небольшой отступ справа */
-  bottom: 3px;            /* опускаем полоску ближе к baseline */
-  
-  width: 14px;            /* короче */
-  height: 3px;            /* чуть толще */
-  background: #e5e5e5;
-
-  animation: caret-blink 3s steps(2, start) infinite;
-}
-
-@keyframes caret-blink {
+@keyframes blink {
   0%, 49% { opacity: 1; }
   50%, 100% { opacity: 0; }
 }
+
+.animate-blink {
+  animation: blink 2s steps(1, end) infinite;
+}
+
 
 @layer base {
   /* Общий контейнер тела поста (view + editor) */
@@ -315,3 +353,4 @@ body {
   animation-duration: calc(var(--globe-speed, 14s) * 1.25);
   opacity: 0.85;
 }
+

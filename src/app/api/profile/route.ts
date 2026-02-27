@@ -52,6 +52,11 @@ export async function GET() {
           bannerUrl: true,
         },
       },
+      wallet: {
+        select: {
+          eurodollars: true,
+        },
+      },
     },
   });
   if (!me) return new NextResponse("Not found", { status: 404 });
@@ -63,6 +68,7 @@ export async function GET() {
     bio: me.profile?.bio ?? null,
     avatarUrl: coerceMediaKey(me.profile?.avatarUrl) ?? null,
     bannerUrl: coerceMediaKey(me.profile?.bannerUrl) ?? null,
+    eurodollars: me.wallet?.eurodollars ?? 0,
     user: { id: me.id, email: me.email },
   });
 }

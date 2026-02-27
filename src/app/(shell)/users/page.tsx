@@ -1,8 +1,19 @@
-// src/app/players/page.tsx
+// src/app/(shell)/users/page.tsx
 import { prisma } from "@/server/db";
+import type { Prisma } from "@prisma/client";
 import PlayersTable from "./players-table";
+import ShellVariantSetter from "@/app/shell/ShellVariant";
+
+type UserRow = {
+  id: string;
+  username: string;
+  lastSeenAt: Date | null;
+  profile: { displayName: string | null } | null;
+  characterApplications: { status: string }[];
+};
 
 export const dynamic = "force-dynamic";
+
 
 function batteryFromLastSeen(lastSeenAt: Date | null) {
   if (!lastSeenAt) return 0;
@@ -14,7 +25,7 @@ function batteryFromLastSeen(lastSeenAt: Date | null) {
 
 export default async function PlayersPage() {
   // MVP definition of "player": has approved character application
-  const users = await prisma.user.findMany({
+  const users: UserRow[] = await prisma.user.findMany({
     select: {
       id: true,
       username: true,
@@ -45,17 +56,20 @@ export default async function PlayersPage() {
     });
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold">Players</h1>
-          <p className="text-sm opacity-70">
-            Directory of connected members.
-          </p>
-        </div>
-      </div>
+    <>
+      {/* Switch shell layout to "full" for this page */}
+      <ShellVariantSetter variant="full" />
 
-      <PlayersTable initialRows={rows} />
-    </div>
+      <div className="space-y-4">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold">Players</h1>
+            <p className="text-sm opacity-70">Directory of connected members.</p>
+          </div>
+        </div>
+
+        <PlayersTable initialRows={rows} />
+      </div>
+    </>
   );
 }

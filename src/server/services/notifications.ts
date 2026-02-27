@@ -68,9 +68,9 @@ function formatNotification(n: RawNotification): NotificationView {
       subtitle = `${chapterTitle} — ${bookTitle}`;
 
       if (bookSlug && chapterIndex !== undefined) {
-        href = `/books/${bookSlug}/${chapterIndex}`;
+        href = `/arcs/${bookSlug}/${chapterIndex}`;
       } else if (bookSlug) {
-        href = `/books/${bookSlug}`;
+        href = `/arcs/${bookSlug}`;
       }
       break;
     }
@@ -95,11 +95,11 @@ function formatNotification(n: RawNotification): NotificationView {
       subtitle = `${chapterTitle} — ${bookTitle}`;
 
       if (bookSlug && chapterIndex !== undefined) {
-        href = `/books/${bookSlug}/${chapterIndex}${
+        href = `/arcs/${bookSlug}/${chapterIndex}${
           postId ? `#post-${postId}` : ""
         }`;
       } else if (bookSlug) {
-        href = `/books/${bookSlug}`;
+        href = `/arcs/${bookSlug}`;
       }
       break;
     }
@@ -143,7 +143,7 @@ export async function listNotificationsForUser(input: {
 }): Promise<NotificationListResult> {
   const { userId, limit, cursor } = input;
 
-  const rows = await prisma.notification.findMany({
+  const rows: RawNotification[] = await prisma.notification.findMany({
     where: { userId },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
@@ -169,7 +169,7 @@ export async function listNotificationsForUser(input: {
     slice = rows;
   }
 
-  const items = slice.map((n) => formatNotification(n as RawNotification));
+  const items = slice.map((n) => formatNotification(n));
   return { items, nextCursor };
 }
 

@@ -6,7 +6,6 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AvatarImg from "@/components/avatarImg";
-import { resolveMediaUrl } from "@/lib/media";
 import {
   useNotificationsFeed,
   type NotificationItem,
@@ -16,6 +15,7 @@ type Props = {
   username: string;
   avatarUrl?: string | null;
   notifCount?: number;
+  variant?: "default" | "topbar";
 };
 
 // Просто формат времени для подписи
@@ -27,7 +27,14 @@ function formatTime(iso: string) {
   });
 }
 
-export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props) {
+export default function UserMenu({
+  username,
+  avatarUrl,
+  notifCount = 0,
+  variant = "default",
+}: Props) {
+  const topbar = variant === "topbar";
+
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -37,7 +44,7 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
     loading: notifLoading,
     refresh: refreshNotifFeed,
     hasMore,
-    } = useNotificationsFeed(5, open);
+  } = useNotificationsFeed(5, open);
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -61,7 +68,6 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
     refreshNotifFeed();
   }, [open, refreshNotifFeed]);
 
-
   // ЛОКАЛЬНАЯ синхронизация бейджа и фида из /notifications (mark read / mark all)
   useEffect(() => {
     const onLocal = (e: Event) => {
@@ -72,8 +78,6 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
       }>;
       if (!detail) return;
 
-      // сам бейдж (notifCount) приходит пропсом сверху (HeaderClient),
-      // здесь только рефрешим дропдаун, чтобы список соответствовал операциям.
       switch (detail.op) {
         case "set":
         case "inc":
@@ -100,7 +104,6 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
 
   // 🟢 клик по уведомлению: mark-one + переход по href
   const handleNotificationClick = async (n: NotificationItem) => {
-    // если нет ссылки — просто игнорируем (уведомление purely информативное)
     if (!n.href) return;
 
     try {
@@ -110,46 +113,76 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
         body: JSON.stringify({ op: "mark-one", id: n.id }),
       }).catch(() => {});
 
-      // локальный ивент, чтобы другие места обновили счётчик/фид
       window.dispatchEvent(
         new CustomEvent("notif:unread", {
           detail: { op: "dec", delta: 1 },
         })
       );
-    } catch {
-      // в худшем случае просто перейдём без обновления счётчика
-    }
+    } catch {}
 
     setOpen(false);
     router.push(n.href);
   };
 
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className={topbar ? "relative h-full w-full" : "relative"}
+    >
 <button
   onClick={() => setOpen((v) => !v)}
   className={[
-    "relative",
-    "h-10 w-10",
+    "relative",          // ✅ нужен stacking context
+    "h-full w-full",
     "rounded-none",
-    "bg-white/5 hover:bg-white/10",
-    "border border-white/10",
+    "bg-black/0 hover:bg-black/5",
+    "border-0",
     "outline-none",
-    "focus-visible:ring-2 focus-visible:ring-white/25",
+    "focus-visible:ring-2 focus-visible:ring-black/20",
   ].join(" ")}
   aria-haspopup="menu"
   aria-expanded={open}
   aria-label="Open user menu"
 >
-  {/* КЛИП ДЛЯ КАРТИНКИ — внутри, чтобы бейдж не обрезался */}
-  <span className="block h-full w-full overflow-hidden rounded-none">
-    {/* eslint-disable-next-line @next/next/no-img-element */}
-<AvatarImg
-  src={resolveMediaUrl(avatarUrl) ?? "/default-avatar.svg"}
-  alt={`${username} avatar`}
-  className="h-full w-full object-cover"
-/>
+  {/* avatar image layer */}
+<span
+  className="relative block h-full w-full overflow-hidden rounded-none"
+  style={{ isolation: "isolate" }}
+>
+  <AvatarImg
+    src={avatarUrl ?? undefined}
+    alt={`${username} avatar`}
+    className="h-full w-full object-cover"
+  />
+
+  {/* Noise ON TOP of avatar pixels, but NEVER blocks clicks */}
+  <span
+    aria-hidden="true"
+    className="pointer-events-none absolute inset-0"
+    style={{ zIndex: 2 }}
+  >
+    {/* Dark sand (good on white areas / skin highlights) */}
+    <span
+      className="absolute inset-0"
+      style={{
+        background: "#000",
+        opacity: 0.22,
+        mixBlendMode: "multiply",
+        filter: "url(#grainDarkSand)",
+      }}
+    />
+    {/* Bright sparkles (good on dark hair / shadows) */}
+    <span
+      className="absolute inset-0"
+      style={{
+        background: "#fff",
+        opacity: 0.10,
+        mixBlendMode: "screen",
+        filter: "url(#grainBrightSparkles)",
+      }}
+    />
   </span>
+</span>
 
   {notifCount > 0 && (
     <span
@@ -159,22 +192,20 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
         rounded-full bg-red-500 px-1 text-[11px] font-semibold leading-none text-white
         shadow-md
       "
-      aria-label={`${notifCount} unread notifications`}
-      title={`${notifCount} unread notifications`}
     >
       {notifCount > 99 ? "99+" : notifCount}
     </span>
   )}
 </button>
 
-
-
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-50 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900/95 backdrop-blur shadow-lg"
-        >
-          {/* верхние пункты меню */}
+{open && (
+  <div
+    role="menu"
+    className={[
+      "absolute z-50 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900/95 backdrop-blur shadow-lg",
+      topbar ? "left-0" : "right-0",
+    ].join(" ")}
+  >
           <Link
             href={`/u/${encodeURIComponent(username)}`}
             className="block px-3 py-2 text-sm hover:bg-white/5"
@@ -198,7 +229,6 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
             )}
           </Link>
 
-          {/* мини-лента последних уведомлений */}
           <div className="border-t border-white/10">
             <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-neutral-400">
               Latest
@@ -231,16 +261,12 @@ export default function UserMenu({ username, avatarUrl, notifCount = 0 }: Props)
                       className="w-full text-left"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate">
-                          {/* 🟢 title приходит уже из бэка, читаемый текст типа "Новый пост!" */}
-                          {n.title || "Notification"}
-                        </span>
+                        <span className="truncate">{n.title || "Notification"}</span>
                         {!n.isRead && (
                           <span className="ml-2 h-2 w-2 rounded-full bg-red-500" />
                         )}
                       </div>
 
-                      {/* Subtitle: "Глава 'X' — книга 'Y'" или просто "Глава 'X'" */}
                       {n.subtitle && (
                         <div className="text-[11px] text-neutral-300 truncate">
                           {n.subtitle}

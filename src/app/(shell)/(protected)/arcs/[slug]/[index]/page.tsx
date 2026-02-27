@@ -1,4 +1,4 @@
-// src/app/books/[slug]/[index]/page.tsx
+// src/app/arcs/[slug]/[index]/page.tsx
 import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
@@ -142,7 +142,7 @@ export default async function ChapterPage({
       <div className="space-y-6">
         <Link
           className="text-sm opacity-70 hover:underline"
-          href={`/books/${slug}`}
+          href={`/arcs/${slug}`}
         >
           ← Back to book
         </Link>
@@ -157,7 +157,7 @@ export default async function ChapterPage({
       <div className="space-y-6">
         <a
           className="text-sm opacity-70 hover:underline"
-          href={`/books/${slug}`}
+          href={`/arcs/${slug}`}
         >
           ← Back to book
         </a>
@@ -248,9 +248,9 @@ if (me && canToggle) {
     }
 
     // чтобы обновился и список глав, и сама страница
-    revalidatePath(`/books/${slug}`);
-    revalidatePath(`/books/${slug}/${chapter.index}`);
-    redirect(`/books/${slug}/${chapter.index}`);
+    revalidatePath(`/arcs/${slug}`);
+    revalidatePath(`/arcs/${slug}/${chapter.index}`);
+    redirect(`/arcs/${slug}/${chapter.index}`);
   }
 
   // ── Server Action: TOGGLE OPEN/CLOSE ───────────────────────────────────────
@@ -279,8 +279,8 @@ if (me && canToggle) {
       throw new Error(`Failed to toggle status (${res.status}): ${txt}`);
     }
 
-    revalidatePath(`/books/${slug}/${chapter.index}`);
-    redirect(`/books/${slug}/${chapter.index}`);
+    revalidatePath(`/arcs/${slug}/${chapter.index}`);
+    redirect(`/arcs/${slug}/${chapter.index}`);
   }
 
   // ── Server Action: DELETE ──────────────────────────────────────────────────
@@ -303,8 +303,8 @@ if (me && canToggle) {
       throw new Error(`Failed to delete (${res.status}): ${txt}`);
     }
 
-    revalidatePath(`/books/${slug}`);
-    redirect(`/books/${slug}`);
+    revalidatePath(`/arcs/${slug}`);
+    redirect(`/arcs/${slug}`);
   }
 
   // ── Server Action: SAVE (PATCH) ────────────────────────────────────────────
@@ -329,14 +329,14 @@ if (me && canToggle) {
       const txt = await res.text().catch(() => "");
       throw new Error(`Failed to update chapter (${res.status}): ${txt}`);
     }
-    revalidatePath(`/books/${slug}/${chapter.index}`);
+    revalidatePath(`/arcs/${slug}/${chapter.index}`);
   }
 
   return (
     <div className="space-y-6">
       <Link
         className="text-sm opacity-70 hover:underline"
-        href={`/books/${book.slug}`}
+        href={`/arcs/${book.slug}`}
       >
         ← Back to book
       </Link>

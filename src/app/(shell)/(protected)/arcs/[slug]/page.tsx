@@ -1,4 +1,4 @@
-// src/app/books/[slug]/page.tsx
+// src/app/arcs/[slug]/page.tsx
 
 // ===== Imports =================================================================
 import { headers, cookies } from "next/headers";
@@ -130,8 +130,8 @@ const followInitial =
       throw new Error(`Failed to delete book (${res.status}): ${txt}`);
     }
 
-    revalidatePath("/books");
-    redirect("/books");
+    revalidatePath("/arcs");
+    redirect("/arcs");
   }
 
   // -- Publish chapter (from list) ----------------------------------------------
@@ -158,7 +158,7 @@ const followInitial =
       throw new Error(`Failed to publish chapter (${res.status}): ${txt}`);
     }
 
-    revalidatePath(`/books/${slug}`);
+    revalidatePath(`/arcs/${slug}`);
   }
 
   // -- Create chapter ------------------------------------------------------------
@@ -185,14 +185,14 @@ const followInitial =
       throw new Error(`Failed to create chapter (${res.status}): ${txt}`);
     }
 
-    revalidatePath(`/books/${slug}`);
+    revalidatePath(`/arcs/${slug}`);
   }
 
   // ===== Render (JSX) ===========================================================
   return (
     <div className="space-y-6">
       {/* -- Breadcrumb ----------------------------------------------------------- */}
-<Link className="text-sm opacity-70 hover:underline" href="/books">
+<Link className="text-sm opacity-70 hover:underline" href="/arcs">
   ← Back to books
 </Link>
 
@@ -293,7 +293,7 @@ const followInitial =
                             </span>
 
                             <Link
-                              href={`/books/${slug}/${c.index}`}
+                              href={`/arcs/${slug}/${c.index}`}
                               className={[
                                 "min-w-0",
                                 "truncate",
@@ -395,7 +395,7 @@ const followInitial =
                               body: JSON.stringify({ userId: c.user.id }),
                               cache: "no-store",
                             });
-                            revalidatePath(`/books/${slug}`);
+                            revalidatePath(`/arcs/${slug}`);
                           }}
                         >
                           <button className="text-xs underline opacity-70 hover:opacity-100">
@@ -428,7 +428,7 @@ const followInitial =
                         body: JSON.stringify({ identifier, role }),
                         cache: "no-store",
                       });
-                      revalidatePath(`/books/${slug}`);
+                      revalidatePath(`/arcs/${slug}`);
                     }}
                     className="flex items-center gap-2 pt-2"
                   >

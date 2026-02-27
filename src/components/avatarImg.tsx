@@ -3,10 +3,11 @@
 
 import { resolveMediaUrl } from "@/lib/media";
 
-type Props = React.ImgHTMLAttributes<HTMLImageElement> & {
-  src?: string | null;
+type Props = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
+  src?: string; // null запрещаем — будет undefined
   fallback?: string;
 };
+
 
 export default function AvatarImg({ src, fallback = "/default-avatar.svg", ...props }: Props) {
   const resolved = resolveMediaUrl(src) ?? fallback;

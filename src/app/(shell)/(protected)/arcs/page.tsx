@@ -41,7 +41,7 @@ export default async function BooksPage() {
     }
 
     const data = await res.json(); // { slug }
-    redirect(`/books/${data.slug}`);
+    redirect(`/arcs/${data.slug}`);
   }
 
   return (
@@ -52,7 +52,7 @@ export default async function BooksPage() {
         {books.length === 0 && <p className="opacity-60">No books yet.</p>}
         {books.map((b: any) => (
           <li key={b.slug} className="border border-neutral-800 rounded-xl p-4">
-            <Link className="text-lg font-medium hover:underline" href={`/books/${b.slug}`}>
+            <Link className="text-lg font-medium hover:underline" href={`/arcs/${b.slug}`}>
               {b.title}
             </Link>
             <p className="opacity-60 text-xs mt-1">{b.status.toLowerCase()}</p>
