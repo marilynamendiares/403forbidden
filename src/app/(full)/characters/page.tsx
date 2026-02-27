@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type Item = {
@@ -41,6 +42,14 @@ function statusBadge(s: Item["status"]) {
 }
 
 export default function CharactersListPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-3xl px-4 py-10 text-sm opacity-70">Loading…</div>}>
+      <CharactersListPageInner />
+    </Suspense>
+  );
+}
+
+function CharactersListPageInner() {
   const router = useRouter();
   const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
