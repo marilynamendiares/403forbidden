@@ -289,7 +289,7 @@ if (!init.ok) {
   }
 
   return (
-    <div className="container mx-auto max-w-2xl px-4 py-8">
+    <div className="container mx-auto max-w-2xl px-4 pb-8">
       <h1 className="text-3xl font-semibold mb-6">Edit profile</h1>
 
       {loading ? (

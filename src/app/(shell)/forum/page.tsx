@@ -77,7 +77,7 @@ export default async function ForumIndexPage() {
       {/* ✅ /forum должен быть широким: растягиваем контент на всю ширину sidebar (center+rail) */}
       <ShellVariantSetter variant="full" />
 
-      <div className="pt-10 space-y-6">
+      <div className="space-y-6">
         {items.length === 0 && <p className="opacity-60">No categories yet.</p>}
 
         {items.length > 0 && (

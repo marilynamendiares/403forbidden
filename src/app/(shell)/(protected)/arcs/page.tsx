@@ -46,7 +46,7 @@ export default async function BooksPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Books</h1>
+      <h1 className="header-font-archimoto text-[15px] leading-none uppercase">Arcs</h1>
 
       <ul className="grid gap-3">
         {books.length === 0 && <p className="opacity-60">No books yet.</p>}

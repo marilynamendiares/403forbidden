@@ -4,6 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useShellVariant } from "./shell/ShellVariantContext";
 import { useShellUI } from "./shell/ShellUIContext";
+import ShellHistoryNav from "./shell/ShellHistoryNav";
 
 type Props = {
   topBar?: React.ReactNode;
@@ -283,13 +284,11 @@ style={
   </div>
 ) : null}
 
+<ShellHistoryNav />
+
 {/* SCROLL BODY (only this scrolls) */}
 <div
   className="flex-1 overflow-y-auto overflow-x-hidden"
-  style={{
-    // чтобы контент не залезал под topbar при "momentum" скролле
-    paddingBottom: "24px",
-  }}
 >
   <div
     className="grid"
@@ -302,8 +301,8 @@ style={
     }}
   >
     <main
-      className="min-w-0 px-18 py-10"
-      style={{ paddingLeft: "72px", paddingRight: "72px" }}
+      className="min-w-0 px-18 pb-10"
+      style={{ paddingTop: "72px", paddingLeft: "72px", paddingRight: "72px" }}
     >
       {children}
     </main>

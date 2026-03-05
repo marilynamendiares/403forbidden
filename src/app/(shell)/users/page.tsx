@@ -61,12 +61,7 @@ export default async function PlayersPage() {
       <ShellVariantSetter variant="full" />
 
       <div className="space-y-4">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Players</h1>
-            <p className="text-sm opacity-70">Directory of connected members.</p>
-          </div>
-        </div>
+        <h1 className="header-font-archimoto text-[15px] leading-none uppercase">Users</h1>
 
         <PlayersTable initialRows={rows} />
       </div>

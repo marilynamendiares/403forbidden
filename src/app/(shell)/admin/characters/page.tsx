@@ -126,7 +126,7 @@ export default function AdminCharactersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 space-y-8">
+    <div className="mx-auto max-w-4xl px-4 pb-10 space-y-8">
       <div>
         <h1 className="text-2xl font-semibold">Character Applications</h1>
         <p className="text-sm opacity-70">Admin review queue.</p>

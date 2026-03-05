@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { ShellVariant, useShellVariant } from "./ShellVariantContext";
 
 export default function ShellVariantSetter({ variant }: { variant: ShellVariant }) {
-  const { variant: prev, setVariant } = useShellVariant();
+  const { registerVariant, unregisterVariant } = useShellVariant();
+  const id = useId();
 
   useEffect(() => {
-    const before = prev;
-    setVariant(variant);
-    return () => setVariant(before);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant]);
+    registerVariant(id, variant);
+    return () => unregisterVariant(id);
+  }, [registerVariant, unregisterVariant, variant]);
 
   return null;
 }

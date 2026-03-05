@@ -28,7 +28,7 @@ export default async function NotificationsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-2xl p-4 space-y-3">
+    <div className="mx-auto max-w-2xl px-4 pb-4 space-y-3">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">Notifications</h1>
         <div className="flex items-center gap-2">

@@ -40,7 +40,7 @@ export default async function ProfilePage() {
   };
 
   return (
-    <div className="mx-auto max-w-2xl py-10 space-y-6">
+    <div className="mx-auto max-w-2xl pb-10 space-y-6">
       <h1 className="text-2xl font-semibold">Profile</h1>
       <div className="rounded border border-neutral-800 p-4">
         <p className="text-sm opacity-70 mb-2">Email: {initial.email}</p>

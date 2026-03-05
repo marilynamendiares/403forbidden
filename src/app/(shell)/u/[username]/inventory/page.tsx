@@ -69,7 +69,7 @@ export default async function UserInventoryPage({ params }: Params) {
   const name = user.profile?.displayName ?? user.username;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 space-y-6">
+    <div className="mx-auto max-w-4xl px-4 pb-10 space-y-6">
       <div className="flex items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Inventory</h1>
