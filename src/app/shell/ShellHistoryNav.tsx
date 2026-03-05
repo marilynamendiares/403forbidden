@@ -6,8 +6,9 @@ import { usePathname, useRouter } from "next/navigation";
 const NAV_KEY = "403.shell.history.nav";
 
 type NavState = {
+  scope: "arcs";
   entries: string[];
-  pointer: number;
+  index: number;
 };
 
 function readNavState(): NavState | null {
@@ -15,11 +16,14 @@ function readNavState(): NavState | null {
     const raw = sessionStorage.getItem(NAV_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<NavState>;
+    if (parsed.scope !== "arcs") return null;
     if (!Array.isArray(parsed.entries)) return null;
-    if (typeof parsed.pointer !== "number") return null;
+    if (typeof parsed.index !== "number") return null;
     if (parsed.entries.length === 0) return null;
-    const pointer = Math.min(Math.max(0, parsed.pointer), parsed.entries.length - 1);
-    return { entries: parsed.entries.map(String), pointer };
+    const entries = parsed.entries.map(String).filter((entry) => entry.startsWith("/arcs"));
+    if (entries.length === 0) return null;
+    const index = Math.min(Math.max(0, parsed.index), entries.length - 1);
+    return { scope: "arcs", entries, index };
   } catch {
     return null;
   }
@@ -29,9 +33,13 @@ function writeNavState(state: NavState) {
   sessionStorage.setItem(NAV_KEY, JSON.stringify(state));
 }
 
-function inferTrail(pathname: string): string[] {
+function isArcsPath(pathname: string) {
+  return pathname === "/arcs" || pathname.startsWith("/arcs/");
+}
+
+function inferArcsTrail(pathname: string): string[] {
   const segs = pathname.split("/").filter(Boolean);
-  if (segs.length === 0) return ["/"];
+  if (segs.length === 0 || segs[0] !== "arcs") return ["/arcs"];
   const out: string[] = [];
   for (let i = 1; i <= segs.length; i += 1) {
     out.push(`/${segs.slice(0, i).join("/")}`);
@@ -39,80 +47,70 @@ function inferTrail(pathname: string): string[] {
   return out;
 }
 
-function syncBrowserForwardState(setBrowserCanForward: (value: boolean) => void) {
-  const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : null;
-  if (idx === null) {
-    setBrowserCanForward(false);
-    return;
-  }
-  const maxIdxKey = `${NAV_KEY}.maxIdx`;
-  const stored = Number(sessionStorage.getItem(maxIdxKey));
-  const maxIdx = Number.isFinite(stored) ? stored : idx;
-  const nextMax = Math.max(maxIdx, idx);
-  sessionStorage.setItem(maxIdxKey, String(nextMax));
-  setBrowserCanForward(idx < nextMax);
+function initFromPath(pathname: string): NavState {
+  const entries = inferArcsTrail(pathname);
+  return {
+    scope: "arcs",
+    entries,
+    index: entries.length - 1,
+  };
 }
 
 export default function ShellHistoryNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [nav, setNav] = useState<NavState | null>(null);
-  const [fallbackCanBack, setFallbackCanBack] = useState(false);
-  const [browserCanForward, setBrowserCanForward] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    setHydrated(true);
     const current = pathname || "/";
+    if (!isArcsPath(current)) {
+      setNav(null);
+      return;
+    }
+
     const existing = readNavState();
-    const navTiming = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
-    const isReload = navTiming?.type === "reload";
-
-    if (!existing || isReload) {
-      const entries = inferTrail(current);
-      const next = { entries, pointer: entries.length - 1 };
-      writeNavState(next);
-      setNav(next);
-      setFallbackCanBack(window.history.length > 1);
-      syncBrowserForwardState(setBrowserCanForward);
+    if (!existing) {
+      const initialized = initFromPath(current);
+      writeNavState(initialized);
+      setNav(initialized);
       return;
     }
 
-    if (existing.entries[existing.pointer] === current) {
+    if (existing.entries[existing.index] === current) {
       setNav(existing);
-      setFallbackCanBack(window.history.length > 1);
-      syncBrowserForwardState(setBrowserCanForward);
       return;
     }
 
-    if (
-      existing.pointer < existing.entries.length - 1 &&
-      existing.entries[existing.pointer + 1] === current
-    ) {
-      const next = { ...existing, pointer: existing.pointer + 1 };
+    if (existing.index > 0 && existing.entries[existing.index - 1] === current) {
+      const next = { ...existing, index: existing.index - 1 };
       writeNavState(next);
       setNav(next);
-      setFallbackCanBack(window.history.length > 1);
-      syncBrowserForwardState(setBrowserCanForward);
       return;
     }
 
-    const nextEntries = existing.entries.slice(0, existing.pointer + 1);
-    nextEntries.push(current);
-    const next = { entries: nextEntries, pointer: nextEntries.length - 1 };
+    if (existing.index < existing.entries.length - 1 && existing.entries[existing.index + 1] === current) {
+      const next = { ...existing, index: existing.index + 1 };
+      writeNavState(next);
+      setNav(next);
+      return;
+    }
+
+    const truncated = existing.entries.slice(0, existing.index + 1);
+    const deduped = truncated[truncated.length - 1] === current ? truncated : [...truncated, current];
+    const next = { scope: "arcs" as const, entries: deduped, index: deduped.length - 1 };
     writeNavState(next);
     setNav(next);
-    setFallbackCanBack(window.history.length > 1);
-    syncBrowserForwardState(setBrowserCanForward);
   }, [pathname]);
 
-  const hidden = useMemo(() => {
-    return pathname === "/forum" || pathname === "/pager" || pathname === "/users";
-  }, [pathname]);
+  const hidden = useMemo(() => !pathname || !isArcsPath(pathname), [pathname]);
 
-  if (hidden) return null;
+  if (!hydrated || hidden || !nav) return null;
 
   const atArcsRoot = pathname === "/arcs";
-  const canBack = atArcsRoot ? false : (nav?.pointer ?? 0) > 0 || fallbackCanBack;
-  const canForward = (nav ? nav.pointer < nav.entries.length - 1 : false) || browserCanForward;
+  const canBack = atArcsRoot ? false : nav.index > 0;
+  const canForward = nav.index < nav.entries.length - 1;
 
   return (
     <div
@@ -128,16 +126,11 @@ export default function ShellHistoryNav() {
       <button
         type="button"
         onClick={() => {
-          if (nav && nav.pointer > 0) {
-            const next = { ...nav, pointer: nav.pointer - 1 };
-            writeNavState(next);
-            setNav(next);
-            router.push(next.entries[next.pointer]!);
-            return;
-          }
-          if (typeof window !== "undefined" && window.history.length > 1) {
-            router.back();
-          }
+          if (!canBack) return;
+          const next = { ...nav, index: nav.index - 1 };
+          writeNavState(next);
+          setNav(next);
+          router.push(next.entries[next.index]!);
         }}
         disabled={!canBack}
         className="header-font-archimoto text-[24px] leading-none transition-colors disabled:cursor-default"
@@ -151,14 +144,11 @@ export default function ShellHistoryNav() {
       <button
         type="button"
         onClick={() => {
-          if (nav && nav.pointer < nav.entries.length - 1) {
-            const next = { ...nav, pointer: nav.pointer + 1 };
-            writeNavState(next);
-            setNav(next);
-            router.push(next.entries[next.pointer]!);
-            return;
-          }
-          router.forward();
+          if (!canForward) return;
+          const next = { ...nav, index: nav.index + 1 };
+          writeNavState(next);
+          setNav(next);
+          router.push(next.entries[next.index]!);
         }}
         disabled={!canForward}
         className="header-font-archimoto text-[24px] leading-none transition-colors disabled:cursor-default"
