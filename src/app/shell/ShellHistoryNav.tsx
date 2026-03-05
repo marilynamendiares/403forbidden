@@ -39,11 +39,26 @@ function inferTrail(pathname: string): string[] {
   return out;
 }
 
+function syncBrowserForwardState(setBrowserCanForward: (value: boolean) => void) {
+  const idx = typeof window.history.state?.idx === "number" ? window.history.state.idx : null;
+  if (idx === null) {
+    setBrowserCanForward(false);
+    return;
+  }
+  const maxIdxKey = `${NAV_KEY}.maxIdx`;
+  const stored = Number(sessionStorage.getItem(maxIdxKey));
+  const maxIdx = Number.isFinite(stored) ? stored : idx;
+  const nextMax = Math.max(maxIdx, idx);
+  sessionStorage.setItem(maxIdxKey, String(nextMax));
+  setBrowserCanForward(idx < nextMax);
+}
+
 export default function ShellHistoryNav() {
   const router = useRouter();
   const pathname = usePathname();
   const [nav, setNav] = useState<NavState | null>(null);
   const [fallbackCanBack, setFallbackCanBack] = useState(false);
+  const [browserCanForward, setBrowserCanForward] = useState(false);
 
   useEffect(() => {
     const current = pathname || "/";
@@ -57,12 +72,14 @@ export default function ShellHistoryNav() {
       writeNavState(next);
       setNav(next);
       setFallbackCanBack(window.history.length > 1);
+      syncBrowserForwardState(setBrowserCanForward);
       return;
     }
 
     if (existing.entries[existing.pointer] === current) {
       setNav(existing);
       setFallbackCanBack(window.history.length > 1);
+      syncBrowserForwardState(setBrowserCanForward);
       return;
     }
 
@@ -74,6 +91,7 @@ export default function ShellHistoryNav() {
       writeNavState(next);
       setNav(next);
       setFallbackCanBack(window.history.length > 1);
+      syncBrowserForwardState(setBrowserCanForward);
       return;
     }
 
@@ -83,6 +101,7 @@ export default function ShellHistoryNav() {
     writeNavState(next);
     setNav(next);
     setFallbackCanBack(window.history.length > 1);
+    syncBrowserForwardState(setBrowserCanForward);
   }, [pathname]);
 
   const hidden = useMemo(() => {
@@ -93,7 +112,7 @@ export default function ShellHistoryNav() {
 
   const atArcsRoot = pathname === "/arcs";
   const canBack = atArcsRoot ? false : (nav?.pointer ?? 0) > 0 || fallbackCanBack;
-  const canForward = nav ? nav.pointer < nav.entries.length - 1 : false;
+  const canForward = (nav ? nav.pointer < nav.entries.length - 1 : false) || browserCanForward;
 
   return (
     <div
