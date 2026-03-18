@@ -13,20 +13,6 @@ type Props = {
   onSave: (formData: FormData) => Promise<void> | void;
 };
 
-// простая статистика
-function getStats(text: string) {
-  const plain = text
-    .replace(/<[^>]+>/g, " ") // выкидываем теги
-    .replace(/\s+/g, " ")
-    .trim();
-
-  const words = plain ? plain.split(" ").length : 0;
-  const chars = plain.length;
-  const minutes = words ? Math.max(1, Math.round(words / 200)) : 0;
-
-  return { words, chars, minutes };
-}
-
 export function ChapterIntroClient({
   chapterId,
   canEdit,
@@ -104,8 +90,6 @@ export function ChapterIntroClient({
   useEffect(() => {
     setContent(defaultContent);
   }, [defaultContent]);
-
-  const stats = useMemo(() => getStats(content), [content]);
 
   const dirty =
     title !== baseline.title || content !== baseline.content;
@@ -245,16 +229,12 @@ export function ChapterIntroClient({
     setLastSavedAt(null);
   }
 
-  // статусная строчка
-  let statusLabel = "No local changes";
-  if (saveState === "saving") {
-    statusLabel = "Saving draft…";
-  } else if (saveState === "saved" && lastSavedAt) {
-    const sec = Math.round((Date.now() - lastSavedAt) / 1000);
-    statusLabel = sec <= 2 ? "Draft saved just now" : `Draft saved ${sec}s ago`;
-  } else if (dirty) {
-    statusLabel = "Unsaved changes";
-  }
+  const hasDraftState = draftRestored || dirty || saveState === "saving" || saveState === "saved";
+  const statusLabel = draftRestored
+    ? "local draft restored"
+    : hasDraftState
+      ? "draft saved"
+      : "no local changes";
 
   function handleSave() {
     if (!canEdit || isPending) return;
@@ -419,9 +399,9 @@ async function handleCancel() {
         const ok = await lockCall("acquire_or_beat");
         if (ok) setEditing(true);
       }}
-      className="rounded-md border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-40 disabled:hover:bg-transparent"
+      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
     >
-      Edit chapter
+      Edit
     </button>
 
     {lock.status === "locked" && (
@@ -470,18 +450,6 @@ async function handleCancel() {
         <span className="uppercase tracking-wide text-neutral-500">
           EDITING CHAPTER
         </span>
-        {draftRestored && (
-          <div className="inline-flex items-center gap-2 text-amber-300">
-            <span>Local draft restored</span>
-            <button
-              type="button"
-              onClick={discardLocalDraft}
-              className="rounded-full border border-amber-500/60 px-2.5 py-0.5 text-[11px] text-amber-100 hover:bg-amber-500/10"
-            >
-              Discard draft
-            </button>
-          </div>
-        )}
       </div>
 
       {/* заголовок + текст интро */}
@@ -499,13 +467,13 @@ async function handleCancel() {
           <RichPostEditor
             value={content}
             onChange={setContent}
-          disabled={!canEdit || isPending || lock.status !== "mine"}
-
+            disabled={!canEdit || isPending || lock.status !== "mine"}
+            tone="light"
           />
         </div>
 
-        {/* низ: слева Save/Cancel, справа — статистика */}
-        <div className="flex items-center justify-between pt-1">
+        {/* низ: слева Save/Cancel, справа — статус локального драфта */}
+        <div className="flex items-center justify-between gap-4 pt-1">
           <div className="flex gap-3 text-xs text-muted-foreground">
 <button
   type="button"
@@ -526,13 +494,19 @@ async function handleCancel() {
             </button>
           </div>
 
-          <p className="text-[11px] opacity-60 leading-snug text-right">
-            {stats.words} words · {stats.chars} chars
-            {stats.minutes > 0 && <> · ~ {stats.minutes} min read</>} ·{" "}
-            {statusLabel}
-            <br />
-            Only owner or chapter author can edit.
-          </p>
+          <div className="flex items-center gap-3 text-[11px] text-right text-neutral-500">
+            <span>{statusLabel}</span>
+            {hasDraftState && (
+              <button
+                type="button"
+                onClick={discardLocalDraft}
+                disabled={isPending}
+                className="hover:text-foreground disabled:opacity-50"
+              >
+                reset
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>

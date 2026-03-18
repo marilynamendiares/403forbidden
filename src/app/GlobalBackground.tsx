@@ -17,6 +17,37 @@ export default function GlobalBackground() {
         }}
       />
 
+      {/* PROGRESSIVE SHADOW STACK (full artboard overlay, under grain) */}
+      <div
+        aria-hidden="true"
+        className="fixed top-0 left-1/2 h-screen pointer-events-none"
+        style={{
+          transform: "translateX(-50%)",
+          width: "min(100vw, 1920px)",
+          zIndex: 1,
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: [
+              "radial-gradient(130% 95% at 92% 8%, rgba(165,165,165,0.065) 0%, rgba(165,165,165,0.03) 32%, rgba(165,165,165,0) 62%)",
+              "radial-gradient(140% 120% at 12% 92%, rgba(0,0,0,0.34) 0%, rgba(0,0,0,0.16) 40%, rgba(0,0,0,0) 72%)",
+              "linear-gradient(135deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.11) 42%, rgba(0,0,0,0.04) 100%)",
+            ].join(", "),
+            boxShadow: [
+              "inset 0 0 0 1px rgba(165, 165, 165, 0.025)",
+              "inset 9px -9px 9px -0.5px rgba(0, 0, 0, 0.05)",
+              "inset 18px -18px 18px -1.5px rgba(0, 0, 0, 0.1)",
+              "inset 37px -37px 37px -3px rgba(0, 0, 0, 0.16)",
+              "inset 75px -75px 75px -6px rgba(0, 0, 0, 0.23)",
+              "inset 150px -150px 150px -12px rgba(0, 0, 0, 0.32)",
+            ].join(", "),
+          }}
+        />
+      </div>
+
       {/* ARTBOARD NOISE — procedural, resolution-independent */}
       <div
         aria-hidden="true"

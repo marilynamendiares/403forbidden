@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import ShellVariantSetter from "@/app/shell/ShellVariant";
 import BooksLiveClient from "@/components/BooksLiveClient";
 import CollapsibleSection from "@/components/CollapsibleSection";
 
@@ -45,40 +46,44 @@ export default async function BooksPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <h1 className="header-font-archimoto text-[15px] leading-none uppercase">Arcs</h1>
+    <>
+      <ShellVariantSetter variant="full" />
 
-      <ul className="grid gap-3">
-        {books.length === 0 && <p className="opacity-60">No books yet.</p>}
-        {books.map((b: any) => (
-          <li key={b.slug} className="border border-neutral-800 rounded-xl p-4">
-            <Link className="text-lg font-medium hover:underline" href={`/arcs/${b.slug}`}>
-              {b.title}
-            </Link>
-            <p className="opacity-60 text-xs mt-1">{b.status.toLowerCase()}</p>
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-6">
+        <h1 className="header-font-archimoto text-[15px] leading-none uppercase">Arcs</h1>
 
-<CollapsibleSection label="Create a book">
-  <form action={create} className="space-y-2">
-    {/* заголовок внутри уже не нужен, кнопка — это заголовок секции */}
-    <input
-      name="title"
-      placeholder="Title"
-      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-      required
-    />
-    <input
-      name="tagline"
-      placeholder="Tagline (optional)"
-      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-    />
-    <button className="rounded bg-white text-black px-4 py-2">Create</button>
-    <p className="opacity-60 text-xs">Requires sign-in.</p>
-  </form>
-</CollapsibleSection>
-      <BooksLiveClient />
-    </div>
+        <ul className="grid gap-3">
+          {books.length === 0 && <p className="opacity-60">No books yet.</p>}
+          {books.map((b: any) => (
+            <li key={b.slug} className="border border-neutral-800 rounded-xl p-4">
+              <Link className="text-lg font-medium hover:underline" href={`/arcs/${b.slug}`}>
+                {b.title}
+              </Link>
+              <p className="opacity-60 text-xs mt-1">{b.status.toLowerCase()}</p>
+            </li>
+          ))}
+        </ul>
+
+        <CollapsibleSection label="Create a book">
+          <form action={create} className="space-y-2">
+            {/* заголовок внутри уже не нужен, кнопка — это заголовок секции */}
+            <input
+              name="title"
+              placeholder="Title"
+              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+              required
+            />
+            <input
+              name="tagline"
+              placeholder="Tagline (optional)"
+              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+            />
+            <button className="rounded bg-white text-black px-4 py-2">Create</button>
+            <p className="opacity-60 text-xs">Requires sign-in.</p>
+          </form>
+        </CollapsibleSection>
+        <BooksLiveClient />
+      </div>
+    </>
   );
 }

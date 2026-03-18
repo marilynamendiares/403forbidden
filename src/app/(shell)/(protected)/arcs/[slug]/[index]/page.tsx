@@ -3,21 +3,25 @@ import Link from "next/link";
 import { headers, cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { timeAgo } from "@/lib/TimeAgo";
 import { redis, chapterLockKey } from "@/server/redis";
 import ChapterLiveClient from "@/features/chapters/ui/ChapterLiveClient";
 import { prisma } from "@/server/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/server/auth";
 import { getRole } from "@/server/access";
+import { listChaptersForViewer } from "@/server/services/chapters";
 import { ChapterIntroClient } from "@/components/chapter/ChapterIntroClient";
-import { ChapterActionsMenu } from "@/components/chapter/ChapterActionsMenu";
+import { DeleteChapterControl } from "@/components/chapter/DeleteChapterControl";
 
 // Поток постов и композер
 import { ChapterPostList } from "@/components/chapter/ChapterPostList";
 import { ChapterComposer } from "@/components/chapter/ChapterComposer";
-import { ChapterStatusBadge } from "@/components/ChapterStatusBadge";
-import { ChapterStatusToggleButton } from "@/components/ChapterStatusToggleButton";
+import { StickyCenterRail } from "@/components/layout/StickyCenterRail";
+import { ChapterRailNav } from "@/components/chapter/ChapterRailNav";
+import ShellScrollModeSetter from "@/app/shell/ShellScrollMode";
+import ShellSurfaceSetter from "@/app/shell/ShellSurface";
+import ShellVariantSetter from "@/app/shell/ShellVariant";
+import { computeReadingStats } from "@/lib/readingTime";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +49,28 @@ type ChapRes = {
 function toInt(v: string) {
   const n = Number(v);
   return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function stripHtml(html: string) {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<\/p>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function extractFirstSentence(html: string) {
+  const plain = stripHtml(html);
+  if (!plain) return "";
+
+  const match = plain.match(/^(.+?[.!?。])(\\s|$)/);
+  if (match?.[1]) return match[1].trim();
+
+  return plain;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -174,6 +200,46 @@ export default async function ChapterPage({
 
   const { book, chapter, author, canEdit } = data;
   const isClosed = (chapter.status ?? "OPEN") === "CLOSED";
+  const chapterListData = await listChaptersForViewer({ slug, viewerId: me });
+  const chapters = chapterListData?.chapters ?? [];
+  const chapterNavItems = chapters.map((c: any) => ({
+    id: c.id,
+    index: c.index,
+    title: c.title,
+    isDraft: !c.publishedAt,
+    postsCount:
+      (c._count?.posts as number | undefined) ??
+      (c.postsCount as number | undefined) ??
+      (c.postCount as number | undefined) ??
+      null,
+  }));
+
+  const currentChapterPosts = await prisma.chapterPost.findMany({
+    where: { chapterId: chapter.id },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    select: {
+      id: true,
+      contentMd: true,
+      contentHtml: true,
+    },
+  });
+
+  const chapterPostNavItems = currentChapterPosts
+    .map((post) => ({
+      id: post.id,
+      snippet: extractFirstSentence(post.contentHtml ?? post.contentMd),
+    }))
+    .filter((post) => post.snippet.length > 0);
+
+  const readingSource = [
+    stripHtml(chapter.markdown ?? ""),
+    ...currentChapterPosts.map((post) => stripHtml(post.contentHtml ?? post.contentMd ?? "")),
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const chapterReadingStats = computeReadingStats(readingSource);
+  const publicationLabel = chapter.isDraft ? "Draft" : "Published";
+  const progressLabel = (chapter.status ?? "OPEN") === "CLOSED" ? "Completed" : "Ongoing";
 
   // 👉 Ищем следующую опубликованную главу этой же книги
   const nextChapter = await prisma.chapter.findFirst({
@@ -333,84 +399,141 @@ if (me && canToggle) {
   }
 
   return (
-    <div className="space-y-6">
-      <Link
-        className="text-sm opacity-70 hover:underline"
-        href={`/arcs/${book.slug}`}
+    <div className="relative h-full min-h-0 overflow-hidden text-[#2D2D2D]">
+      <ShellScrollModeSetter mode="split" />
+      <ShellVariantSetter variant="full" />
+      <ShellSurfaceSetter surface="light" />
+      <div
+        className="grid h-full min-h-0 gap-0 overflow-hidden"
+        style={{ gridTemplateColumns: "minmax(0, 1fr) var(--right-rail-w)" }}
       >
-        ← Back to book
-      </Link>
+        <StickyCenterRail
+          breadcrumb={
+            <div className="header-font-archimoto inline-flex w-fit items-center gap-2 text-[15px] font-thin leading-none uppercase text-[#666666]">
+              <span>/</span>
+              <Link href="/arcs" className="transition-colors hover:text-[#2D2D2D]">
+                ARCS
+              </Link>
+              <span>/</span>
+              <Link
+                href={`/arcs/${slug}`}
+                className="transition-colors hover:text-[#2D2D2D]"
+              >
+                {book.title}
+              </Link>
+              <span>/</span>
+            </div>
+          }
+          stickySuffix={
+            <span className="header-font-archimoto text-[15px] font-thin leading-none uppercase text-[#666666]">
+              {chapter.title}
+            </span>
+          }
+        >
+          <div className="flex flex-col gap-[30px]">
+            <h1
+              data-sticky-title
+              className="text-[36px] leading-none font-bold text-[#2D2D2D]"
+            >
+              {chapter.title}
+            </h1>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">
-            #{chapter.index} · {chapter.title}{" "}
-            {chapter.isDraft ? "– Draft" : ""}
-          </h1>
-
-          <p className="opacity-60 text-sm mt-1">
-            {chapter.isDraft ? "draft" : "published"}
-            {" · "}updated {timeAgo(chapter.updatedAt)}
-            {author && (
-              <>
-                {" · "}
-                <span className="opacity-80">
-                  created by{" "}
-                  <b>
-                    @{author.username ??
-                      author.displayName ??
-                      author.email ??
-                      "unknown"}
-                  </b>
-                </span>
-              </>
-            )}
-            {" · "}status:{" "}
-            <ChapterStatusBadge
-              status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
+            <ChapterIntroClient
+              chapterId={chapter.id}
+              canEdit={canEdit}
+              defaultTitle={chapter.title}
+              defaultContent={chapter.markdown ?? ""}
+              onSave={save}
             />
-          </p>
-        </div>
 
-<ChapterActionsMenu
-  canToggle={canToggle}
-  canEdit={canEdit}
-  isDraft={chapter.isDraft}
-  status={(chapter.status ?? "OPEN") as "OPEN" | "CLOSED"}
+            <div className="mt-8">
+              <h2 className="mb-2 text-lg font-semibold">Posts</h2>
+              <ChapterPostList
+                slug={slug}
+                index={chapter.index}
+                currentUserId={me}
+              />
+              <ChapterComposer
+                slug={slug}
+                index={chapter.index}
+                disabled={!canPost}
+                nextChapterIndex={nextChapterIndex}
+              />
 
-  reopenCost={REOPEN_COST}
-  canAffordReopen={canAffordReopen}
+              <div className="header-font-archimoto mt-8 grid gap-2 text-[15px] font-thin leading-none uppercase text-[#666666]">
+                <div className="flex items-center gap-2">
+                  <span>{publicationLabel}</span>
+                  <span>/</span>
+                  <span>{progressLabel}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>
+                    ~{chapterReadingStats.minutes} min read / {chapterReadingStats.words} words
+                  </span>
+                </div>
+              </div>
 
-  toggleAction={toggleChapterStatus}
-  publishAction={publishThisChapter}
-  deleteAction={deleteThisChapter}
-/>
-      </div>
+              {canEdit && (
+                <div className="mt-6 flex flex-wrap items-center gap-4">
+                  {chapter.isDraft && (
+                    <form action={publishThisChapter}>
+                      <button
+                        type="submit"
+                        className="inline-flex items-center rounded-md border border-neutral-700 px-4 py-2 text-sm text-[#2D2D2D] transition hover:bg-[#2D2D2D]/5"
+                      >
+                        Publish chapter
+                      </button>
+                    </form>
+                  )}
 
-      {/* Интро главы + inline-редактор */}
-      <ChapterIntroClient
-        chapterId={chapter.id} // 🆕
-        canEdit={canEdit}
-        defaultTitle={chapter.title}
-        defaultContent={chapter.markdown ?? ""}
-        onSave={save}
-      />
+                  {canToggle && !chapter.isDraft && (
+                    <form action={toggleChapterStatus}>
+                      <button
+                        type="submit"
+                        disabled={isClosed && !canAffordReopen}
+                        title={
+                          isClosed && !canAffordReopen
+                              ? `Not enough funds (need ${REOPEN_COST} €$)`
+                              : undefined
+                        }
+                        className={[
+                          "inline-flex items-center gap-3 rounded-md border border-neutral-700 px-4 py-2 text-sm text-[#2D2D2D] transition",
+                          isClosed && !canAffordReopen
+                            ? "cursor-not-allowed opacity-40"
+                            : "hover:bg-[#2D2D2D]/5",
+                        ].join(" ")}
+                      >
+                        <span>{isClosed ? "Re-open chapter" : "Complete chapter"}</span>
+                        {isClosed && (
+                          <span className="header-font-archimoto text-[15px] font-thin leading-none text-[#666666]">
+                            -{REOPEN_COST} €$
+                          </span>
+                        )}
+                      </button>
+                    </form>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </StickyCenterRail>
 
-      {/* Поток постов */}
-      <div className="mt-8">
-        <h2 className="mb-2 text-lg font-semibold">Posts</h2>
-        <ChapterPostList
-          slug={slug}
-          index={chapter.index}
-          currentUserId={me}
-          // 🆕 пробрасываем индекс следующей главы (или null)
-          nextChapterIndex={nextChapterIndex}
-        />
-        <ChapterComposer
-          slug={slug}
-          index={chapter.index}
-          disabled={!canPost}
-        />
+        <aside className="scrollbar-hidden h-full min-h-0 min-w-0 overflow-y-auto pl-[72px] pb-10 pt-[155px]">
+          <div className="flex min-h-full flex-col">
+            <ChapterRailNav
+              slug={slug}
+              currentChapterIndex={chapter.index}
+              chapters={chapterNavItems}
+              currentChapterPosts={chapterPostNavItems}
+            />
+
+            {canEdit && (
+              <div className="mt-auto flex justify-end pt-10">
+                <DeleteChapterControl action={deleteThisChapter} />
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
 
       {/* SSE подписчик */}

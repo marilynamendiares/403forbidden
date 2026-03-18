@@ -2,9 +2,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
+import { useShellScrollMode } from "./shell/ShellScrollMode";
 import { useShellVariant } from "./shell/ShellVariantContext";
+import { useShellSurface } from "./shell/ShellSurface";
 import { useShellUI } from "./shell/ShellUIContext";
-import ShellHistoryNav from "./shell/ShellHistoryNav";
 
 type Props = {
   topBar?: React.ReactNode;
@@ -12,10 +13,13 @@ type Props = {
 };
 
 export default function SidebarFrame({ topBar, children }: Props) {
+  const { mode: scrollMode } = useShellScrollMode();
   const { variant } = useShellVariant();
-  const { sidebarOpen, closeSidebar, openSidebar } = useShellUI();
+  const { surface } = useShellSurface();
+  const { sidebarOpen, restored, closeSidebar, openSidebar } = useShellUI();
   const [brandHover, setBrandHover] = useState(false);
   const [leftRailPx, setLeftRailPx] = useState(0);
+  const [panelReady, setPanelReady] = useState(false);
 
   // Esc closes sidebar
   useEffect(() => {
@@ -47,12 +51,22 @@ export default function SidebarFrame({ topBar, children }: Props) {
     return () => window.removeEventListener("resize", recalcLeftRail);
   }, []);
 
+  useEffect(() => {
+    if (!restored) return;
+    let raf = window.requestAnimationFrame(() => {
+      setPanelReady(true);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [restored]);
+
   const sidebarHoverNudgePx = useMemo(() => {
     if (!sidebarOpen || !brandHover) return 0;
     if (leftRailPx >= 250) return 0;
     // Restore a bit of left space for logo hover, capped to avoid layout jumps.
     return Math.min(120, Math.max(0, 220 - leftRailPx));
   }, [brandHover, leftRailPx, sidebarOpen]);
+
+  const shellBodyBackground = surface === "light" ? "#D9D9D9" : "#1E1E1E";
 
   return (
     <div className="w-full min-h-screen">
@@ -112,11 +126,9 @@ style={
   ].join(" ")}
   style={{
     width: "var(--sidebar-w)",
-    backgroundColor: "#1E1E1E",
+    backgroundColor: shellBodyBackground,
     isolation: "isolate",
-    // defaults for hole (off-screen)
-    ["--hole-x" as any]: "99999px",
-    ["--hole-w" as any]: "0px",
+    visibility: panelReady ? "visible" : "hidden",
     transform: sidebarOpen
       ? `translateX(${sidebarHoverNudgePx}px)`
       : "translateX(100%)",
@@ -148,16 +160,6 @@ style={
       background: "#D9D9D9",
       zIndex: 1,
       pointerEvents: "none",
-
-      // mask makes the active tab area transparent (hole)
-      WebkitMaskImage:
-        "linear-gradient(90deg, #000 0 var(--hole-x), transparent var(--hole-x) calc(var(--hole-x) + var(--hole-w)), #000 calc(var(--hole-x) + var(--hole-w)) 100%)",
-      maskImage:
-        "linear-gradient(90deg, #000 0 var(--hole-x), transparent var(--hole-x) calc(var(--hole-x) + var(--hole-w)), #000 calc(var(--hole-x) + var(--hole-w)) 100%)",
-      WebkitMaskRepeat: "no-repeat",
-      maskRepeat: "no-repeat",
-      WebkitMaskSize: "100% 100%",
-      maskSize: "100% 100%",
     }}
   />
 
@@ -202,15 +204,15 @@ style={
       {/* Pull down midtones -> more dark specks */}
       <feComponentTransfer in="g" result="sand">
         {/* slope < 1 compresses, intercept shifts darker/lighter */}
-        <feFuncR type="linear" slope="0.65" intercept="0.05" />
-        <feFuncG type="linear" slope="0.65" intercept="0.05" />
-        <feFuncB type="linear" slope="0.65" intercept="0.05" />
+        <feFuncR type="linear" slope="0.78" intercept="0.20" />
+        <feFuncG type="linear" slope="0.78" intercept="0.20" />
+        <feFuncB type="linear" slope="0.78" intercept="0.20" />
       </feComponentTransfer>
       {/* Optional: make it a bit harsher (more “sand”) */}
       <feComponentTransfer in="sand">
-        <feFuncR type="gamma" amplitude="1" exponent="1.35" offset="0" />
-        <feFuncG type="gamma" amplitude="1" exponent="1.35" offset="0" />
-        <feFuncB type="gamma" amplitude="1" exponent="1.35" offset="0" />
+        <feFuncR type="gamma" amplitude="1" exponent="1" offset="0" />
+        <feFuncG type="gamma" amplitude="1" exponent="1" offset="0" />
+        <feFuncB type="gamma" amplitude="1" exponent="1" offset="0" />
       </feComponentTransfer>
     </filter>
 
@@ -245,9 +247,9 @@ style={
   <rect
     width="100%"
     height="100%"
-    fill="#000"
+    fill="#2A2A2A"
     filter="url(#grainDarkSand)"
-    opacity="0.24"
+    opacity="0.20"
     style={{ mixBlendMode: "multiply" as any }}
   />
 
@@ -284,11 +286,12 @@ style={
   </div>
 ) : null}
 
-<ShellHistoryNav />
-
 {/* SCROLL BODY (only this scrolls) */}
 <div
-  className="flex-1 overflow-y-auto overflow-x-hidden"
+  className={[
+    "flex-1 overflow-x-hidden",
+    scrollMode === "split" ? "overflow-y-hidden" : "overflow-y-auto",
+  ].join(" ")}
 >
   <div
     className="grid"
@@ -297,12 +300,20 @@ style={
         variant === "full"
           ? "minmax(0, 1fr)"
           : "minmax(0, 1fr) var(--right-rail-w)",
-      minHeight: "calc(100vh - var(--topbar-h))",
+      minHeight: scrollMode === "split" ? "100%" : "calc(100vh - var(--topbar-h))",
+      height: scrollMode === "split" ? "100%" : undefined,
     }}
   >
     <main
-      className="min-w-0 px-18 pb-10"
-      style={{ paddingTop: "72px", paddingLeft: "72px", paddingRight: "72px" }}
+      className={[
+        "min-w-0 px-18 pb-10",
+        scrollMode === "split" ? "h-full min-h-0 overflow-hidden" : "",
+      ].join(" ")}
+      style={{
+        paddingTop: scrollMode === "split" ? "0px" : "72px",
+        paddingLeft: scrollMode === "split" ? "0px" : "72px",
+        paddingRight: "72px",
+      }}
     >
       {children}
     </main>

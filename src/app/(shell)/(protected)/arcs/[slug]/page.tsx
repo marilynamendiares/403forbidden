@@ -11,7 +11,13 @@ import ChaptersLiveClient from "@/features/chapters/ui/ChaptersLiveClient";
 import { getBookBySlug, getFollowStatus } from "@/server/follow";
 import { FollowBookButton } from "@/components/follow/FollowBookButton";
 import CollapsibleSection from "@/components/CollapsibleSection";
-import { BookActionsMenu } from "@/components/book/BookActionsMenu";
+import { DeleteBookControl } from "@/components/book/DeleteBookControl";
+import { BookIntroClient } from "@/components/book/BookIntroClient";
+import { StickyCenterRail } from "@/components/layout/StickyCenterRail";
+import { StickyRightRail } from "@/components/layout/StickyRightRail";
+import ShellScrollModeSetter from "@/app/shell/ShellScrollMode";
+import ShellVariantSetter from "@/app/shell/ShellVariant";
+import ShellSurfaceSetter from "@/app/shell/ShellSurface";
 
 
 // ===== Next.js runtime =========================================================
@@ -165,8 +171,6 @@ const followInitial =
   async function create(formData: FormData) {
     "use server";
     const title = String(formData.get("title") || "");
-    const content = String(formData.get("content") || "");
-    const publish = formData.get("publish") === "on";
 
     const cookie = (await cookies()).toString();
     const h = await headers();
@@ -176,7 +180,7 @@ const followInitial =
     const res = await fetch(`${origin}/api/books/${slug}/chapters`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ title, content, publish }),
+      body: JSON.stringify({ title, content: "", publish: false }),
       cache: "no-store",
     });
 
@@ -188,170 +192,170 @@ const followInitial =
     revalidatePath(`/arcs/${slug}`);
   }
 
+  async function saveBookIntro(formData: FormData) {
+    "use server";
+    const intro = String(formData.get("content") ?? "");
+    const cookie = (await cookies()).toString();
+    const h = await headers();
+    const origin =
+      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+
+    const res = await fetch(`${origin}/api/books/${slug}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", cookie },
+      body: JSON.stringify({ intro }),
+      cache: "no-store",
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Failed to update book intro (${res.status}): ${txt}`);
+    }
+
+    revalidatePath(`/arcs/${slug}`);
+  }
+
   // ===== Render (JSX) ===========================================================
   return (
-    <div className="space-y-6">
-      {/* -- Breadcrumb ----------------------------------------------------------- */}
-<Link className="text-sm opacity-70 hover:underline" href="/arcs">
-  ← Back to books
-</Link>
+    <div className="relative h-full min-h-0 overflow-hidden text-[#2D2D2D]">
+      <ShellScrollModeSetter mode="split" />
+      <ShellVariantSetter variant="full" />
+      <ShellSurfaceSetter surface="light" />
 
-      {/* -- Header + Actions ---------------------------------------------------- */}
-      <div className="flex items-center justify-between">
-        {/* Левая часть: заголовок + роль + created by */}
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold">{book.title}</h1>
+      {/* ===== Intro + Rails ===================================================== */}
+      <div
+        className="grid h-full min-h-0 gap-0 overflow-hidden"
+        style={{ gridTemplateColumns: "minmax(0, 1fr) var(--right-rail-w)" }}
+      >
+        <StickyCenterRail
+          breadcrumb={
+            <div className="header-font-archimoto inline-flex w-fit items-center gap-1 text-[15px] font-thin leading-none uppercase text-[#666666]">
+              <span>/</span>
+              <Link href="/arcs" className="transition-colors hover:text-[#2D2D2D]">
+                ARCS
+              </Link>
+              <span>/</span>
+            </div>
+          }
+          stickySuffix={
+            <span className="header-font-archimoto text-[15px] font-thin leading-none uppercase text-[#666666]">
+              {book.title}
+            </span>
+          }
+        >
+          <div className="flex flex-col gap-[30px]">
+            <h1
+              data-sticky-title
+              className="text-[36px] leading-none font-bold text-[#2D2D2D]"
+            >
+              {book.title}
+            </h1>
 
-            {(meRole === "OWNER" || meRole === "EDITOR") && (
-              <span
-                className={
-                  "rounded-full border px-2 py-0.5 text-xs " +
-                  (meRole === "OWNER"
-                    ? "border-amber-700 text-amber-400"
-                    : "border-blue-700 text-blue-400")
-                }
-                title={meRole === "OWNER" ? "You are the owner" : "You are an editor"}
-              >
-                {meRole.toLowerCase()}
-              </span>
-            )}
-          </div>
-
-          {collabData?.owner && (
-            <p className="opacity-60 text-sm mt-1">
-              created by{" "}
-              <b>
-                @
-                {collabData.owner.username ??
-                  collabData.owner.email ??
-                  "owner"}
-              </b>
-            </p>
-          )}
-        </div>
-
-        {/* Правая часть — Follow bell + троеточие */}
-        <div className="flex items-center gap-2">
-          {bookMeta && (
-            <FollowBookButton
-              slug={slug}
-              initialFollowed={followInitial.followed}
-              initialCount={followInitial.count}
+            <BookIntroClient
+              bookId={bookMeta?.id ?? slug}
+              canEdit={canEditBook}
+              defaultContent={bookMeta?.introHtml ?? ""}
+              onSave={saveBookIntro}
             />
-          )}
+          </div>
+        </StickyCenterRail>
 
-          <BookActionsMenu
-            canDelete={meRole === "OWNER"}   // только владелец видит пункт Delete
-            deleteAction={deleteBook}        // server action из файла
-          />
-        </div>
-      </div>
+        <aside className="h-full min-h-0 min-w-0">
+          <StickyRightRail
+            sticky={
+              bookMeta ? (
+                <FollowBookButton
+                  slug={slug}
+                  initialFollowed={followInitial.followed}
+                  initialCount={followInitial.count}
+                />
+              ) : (
+                <span />
+              )
+            }
+          >
+            <div className="space-y-0">
+            <div className="h-[6px] w-12 bg-[#2D2D2D]" aria-hidden="true" />
 
-      {/* ===== Narrow body (Chapters + Create + Collaborators) =================== */}
-      <div className="mx-auto w-full max-w-5xl">
-        <div className="grid gap-8 md:grid-cols-[minmax(0,1fr)_360px] items-start">
-          {/* LEFT: Chapters + Create */}
-          <div className="space-y-6">
-            {/* -- Chapters list -------------------------------------------------------- */}
-            <section>
-              <h2 className="text-lg font-medium mb-2">Chapters</h2>
+            <section className="pt-[54px]">
+              <h2 className="mb-8 text-[24px] font-bold leading-none">Chapters</h2>
 
-              {/* keep current TOC width, but align to left edge */}
-              <div className="w-full max-w-xl">
-                <ul className="space-y-1">
-                  {chapters.length === 0 && (
-                    <p className="opacity-60">No chapters yet.</p>
-                  )}
+              <ul className="space-y-1">
+                {chapters.length === 0 && (
+                  <p className="opacity-60">No chapters yet.</p>
+                )}
 
-                  {chapters.map((c: any) => {
-                    const isDraft = !c.publishedAt;
-                    const idx = String(c.index ?? 0).padStart(2, "0");
+                {chapters.map((c: any) => {
+                  const isDraft = !c.publishedAt;
+                  const idx = String(c.index ?? 0).padStart(2, "0");
 
-                    const postsCountRaw =
-                      (c._count?.posts as number | undefined) ??
-                      (c.postsCount as number | undefined) ??
-                      (c.postCount as number | undefined);
+                  const postsCountRaw =
+                    (c._count?.posts as number | undefined) ??
+                    (c.postsCount as number | undefined) ??
+                    (c.postCount as number | undefined);
 
-                    const postsCount =
-                      typeof postsCountRaw === "number"
-                        ? String(postsCountRaw).padStart(2, "0")
-                        : "--";
+                  const postsCount =
+                    typeof postsCountRaw === "number"
+                      ? String(postsCountRaw).padStart(2, "0")
+                      : "--";
 
-                    return (
-                      <li key={c.id}>
-                        <div
-                          className={[
-                            "flex items-baseline justify-between",
-                            "py-2",
-                            isDraft ? "text-neutral-500" : "text-white",
-                          ].join(" ")}
-                        >
-                          <div className="flex items-baseline gap-4 min-w-0 flex-1">
-                            <span className="w-10 font-mono text-xs tracking-[0.18em] tabular-nums opacity-80">
-                              {idx}
-                            </span>
-
-                            <Link
-                              href={`/arcs/${slug}/${c.index}`}
-                              className={[
-                                "min-w-0",
-                                "truncate",
-                                "text-base font-medium",
-                                "hover:underline",
-                                isDraft ? "hover:text-neutral-300" : "",
-                              ].join(" ")}
-                              title={c.title}
-                            >
-                              {c.title}
-                            </Link>
-                          </div>
-
-                          <span className="w-10 text-right font-mono text-xs tracking-[0.18em] tabular-nums opacity-70">
-                            {postsCount}
+                  return (
+                    <li key={c.id}>
+                      <div
+                        className={[
+                          "flex items-baseline justify-between py-2",
+                          isDraft ? "text-neutral-500" : "text-[#2D2D2D]",
+                        ].join(" ")}
+                      >
+                        <div className="flex min-w-0 flex-1 items-baseline gap-4">
+                          <span className="header-font-archimoto w-10 text-xs font-thin tracking-[0.18em] tabular-nums opacity-80">
+                            {idx}
                           </span>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            </section>
 
-            {/* -- Create chapter (only OWNER/EDITOR) ---------------------------------- */}
-            {canEditBook && (
-              <div className="w-full max-w-xl">
-                <CollapsibleSection label="Create chapter">
-                  <form action={create} className="space-y-2">
+                          <Link
+                            href={`/arcs/${slug}/${c.index}`}
+                            className={[
+                              "min-w-0 truncate text-base font-medium hover:underline",
+                              isDraft ? "hover:text-[#2D2D2D]" : "",
+                            ].join(" ")}
+                            title={c.title}
+                          >
+                            {c.title}
+                          </Link>
+                        </div>
+
+                        <span className="header-font-archimoto w-10 text-right text-xs font-thin tracking-[0.18em] tabular-nums opacity-70">
+                          {postsCount}
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+
+              {canEditBook && (
+                <CollapsibleSection
+                  label="New Chapter"
+                  buttonClassName="bg-transparent !text-[#2D2D2D] hover:bg-transparent"
+                  panelClassName="bg-transparent"
+                >
+                  <form action={create} className="space-y-3">
                     <input
                       name="title"
-                      placeholder="Title"
-                      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
+                      placeholder="Enter chapter name"
+                      className="w-full rounded border border-neutral-700 bg-transparent px-3 py-2"
                       required
                     />
-                    <textarea
-                      name="content"
-                      placeholder="Markdown content…"
-                      className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-                      rows={8}
-                      required
-                    />
-                    <label className="flex items-center gap-2 text-sm opacity-80">
-                      <input type="checkbox" name="publish" /> Publish immediately
-                    </label>
-                    <button className="rounded bg-white text-black px-4 py-2">
+                    <button className="rounded border border-neutral-700 px-4 py-2 text-sm text-[#2D2D2D] transition hover:bg-[#2D2D2D]/5">
                       Create
                     </button>
-                    <p className="opacity-60 text-xs">Requires sign-in.</p>
                   </form>
                 </CollapsibleSection>
-              </div>
-            )}
-          </div>
+              )}
+            </section>
 
-          {/* RIGHT: Collaborators */}
-          <aside className="space-y-6">
-            <section className="border border-neutral-800 rounded-xl p-4 space-y-3">
+            {/* RIGHT: Collaborators */}
+            <section className="mt-10 border border-neutral-800 rounded-xl p-4 space-y-3">
               <h2 className="text-lg font-medium">Collaborators</h2>
 
               {!collabData ? (
@@ -457,13 +461,19 @@ const followInitial =
                 Управление доступом доступно только владельцу книги.
               </p>
             </section>
-          </aside>
-        </div>
+
+            {meRole === "OWNER" && (
+              <div className="mt-6 flex justify-end">
+                <DeleteBookControl action={deleteBook} />
+              </div>
+            )}
+            </div>
+          </StickyRightRail>
+        </aside>
 
         {/* keep SSE subscriber (can stay anywhere on page) */}
         <ChaptersLiveClient slug={slug} />
       </div>
-      {/* ===== End narrow body =================================================== */}
     </div>
   );
 }

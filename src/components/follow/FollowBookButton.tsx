@@ -49,29 +49,26 @@ export function FollowBookButton({ slug, initialFollowed, initialCount }: Props)
   }
 
   const isActive = followed;
+  const countLabel = String(count ?? 0).padStart(2, "0");
 
   return (
     <button
       type="button"
       onClick={handleToggle}
       disabled={isPending}
-      className={
-        "inline-flex items-center gap-1 text-xs disabled:opacity-50 " +
-        (isActive ? "text-emerald-300" : "text-neutral-400")
-      }
+      className="inline-flex items-center gap-1.5 text-xs text-[#666666] transition-colors hover:text-[#2D2D2D] disabled:opacity-50"
       title={isActive ? "Unfollow book" : "Follow book"}
     >
-      <span
-        className={
-          "inline-flex h-6 w-6 items-center justify-center " +
-          (isActive ? "text-emerald-400" : "text-neutral-500")
-        }
-      >
-        {isActive ? <BellRing className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+      <span className="inline-flex h-6 w-6 items-center justify-center text-neutral-500">
+        {isActive ? (
+          <BellRing className="h-4 w-4 text-[#4F6854]" fill="currentColor" />
+        ) : (
+          <Bell className="h-4 w-4" />
+        )}
       </span>
 
-      <span className={isActive ? "tabular-nums text-emerald-300" : "tabular-nums"}>
-        {count}
+      <span className="header-font-archimoto tabular-nums text-[15px] font-thin leading-none text-[#666666]">
+        {countLabel}
       </span>
     </button>
   );

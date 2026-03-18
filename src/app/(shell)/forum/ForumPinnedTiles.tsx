@@ -12,6 +12,8 @@ const GAP = 26;
 
 // “полотно” делаем выше, чтобы был длинный параллакс
 const EXTRA = 380;
+const EDGE_BUFFER = 50;
+const PARALLAX_AMPLITUDE = EXTRA / 2 - EDGE_BUFFER;
 
 export default function ForumPinnedTiles({ bgUrl }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -61,8 +63,9 @@ export default function ForumPinnedTiles({ bgUrl }: Props) {
         {
           height: totalH,
           ["--py" as any]: "0",
-          // ✅ инверсия параллакса (движение в противоположную сторону)
-          ["--amp" as any]: "-46px",
+          // Двигаем полотно на весь доступный запас, чтобы курсор
+          // мог довести изображение до верхнего и нижнего краёв.
+          ["--amp" as any]: `-${PARALLAX_AMPLITUDE}px`,
         } as React.CSSProperties
       }
     >

@@ -1,6 +1,6 @@
 export const runtime = "nodejs";
 import { NextResponse, type NextRequest } from "next/server";
-import { redis, chapterLockKey, CHAPTER_LOCK_TTL_SEC } from "@/server/redis";
+import { redis, chapterLockKey, bookLockKey, CHAPTER_LOCK_TTL_SEC } from "@/server/redis";
 import { prisma } from "@/server/db";
 import { getRole } from "@/server/access";
 import { getServerSession } from "next-auth";
@@ -10,7 +10,7 @@ import { authOptions } from "@/server/auth";
 /**
  * Body:
  * {
- *   "resource": "chapter",
+ *   "resource": "chapter" | "book",
  *   "id": "<chapterId>",
  *   "action": "acquire_or_beat" | "release",
  *   "tabId": "<uuid per tab>"
@@ -42,35 +42,58 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const resource = body?.resource as "chapter";
+  const resource = body?.resource as "chapter" | "book";
   const id = String(body?.id ?? "");
 const action: "acquire_or_beat" | "release" | "force_release" | "status" =
   body?.action ?? "acquire_or_beat";
   const tabId: string | undefined = body?.tabId;
 
-  if (resource !== "chapter" || !id) {
+  if ((resource !== "chapter" && resource !== "book") || !id) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
 
-  // ACL: soft-lock только тем, кто реально может редактировать оглавление
-  const chapter = await prisma.chapter.findUnique({
-    where: { id },
-    select: { id: true, authorId: true, bookId: true, book: { select: { ownerId: true } } },
-  });
+  let key = "";
 
-  if (!chapter) {
-    return NextResponse.json({ error: "not_found" }, { status: 404 });
+  if (resource === "chapter") {
+    // ACL: soft-lock только тем, кто реально может редактировать оглавление
+    const chapter = await prisma.chapter.findUnique({
+      where: { id },
+      select: { id: true, authorId: true, bookId: true, book: { select: { ownerId: true } } },
+    });
+
+    if (!chapter) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const myRole = await getRole(userId, chapter.bookId);
+    const isOwner = chapter.book.ownerId === userId;
+    const canEditIntro = isOwner || (myRole === "EDITOR" && chapter.authorId === userId);
+
+    if (!canEditIntro) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    key = chapterLockKey(id);
+  } else {
+    const book = await prisma.book.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true },
+    });
+
+    if (!book) {
+      return NextResponse.json({ error: "not_found" }, { status: 404 });
+    }
+
+    const myRole = await getRole(userId, book.id);
+    const canEditBook = book.ownerId === userId || myRole === "EDITOR";
+
+    if (!canEditBook) {
+      return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    }
+
+    key = bookLockKey(id);
   }
 
-  const myRole = await getRole(userId, chapter.bookId); // "OWNER" | "EDITOR" | "AUTHOR" | "VIEWER" | null
-  const isOwner = chapter.book.ownerId === userId;
-  const canEditIntro = isOwner || (myRole === "EDITOR" && chapter.authorId === userId);
-
-  if (!canEditIntro) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
-  }
-
-  const key = chapterLockKey(id);
   const now = Date.now();
 
     // --- STATUS (peek): просто посмотреть, занят ли лок, без захвата ---
@@ -102,7 +125,20 @@ const action: "acquire_or_beat" | "release" | "force_release" | "status" =
 
   // --- FORCE RELEASE: только OWNER ---
   if (action === "force_release") {
-    const isOwner = chapter.book.ownerId === userId;
+    const isOwner =
+      resource === "chapter"
+        ? (
+            await prisma.chapter.findUnique({
+              where: { id },
+              select: { book: { select: { ownerId: true } } },
+            })
+          )?.book.ownerId === userId
+        : (
+            await prisma.book.findUnique({
+              where: { id },
+              select: { ownerId: true },
+            })
+          )?.ownerId === userId;
     if (!isOwner) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
     await redis.del(key);

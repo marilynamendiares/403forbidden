@@ -176,6 +176,7 @@ model Book {
   title     String
   slug      String
   tagline   String?
+  introHtml String?
   coverUrl  String?
   status    BookStatus @default(ONGOING)
   type      BookType   @default(SOLO)

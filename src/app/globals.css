@@ -142,6 +142,15 @@ html, body {
   animation: blink 2s steps(1, end) infinite;
 }
 
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
 
 @layer base {
   /* Общий контейнер тела поста (view + editor) */
@@ -152,9 +161,17 @@ html, body {
     @apply my-2 text-[0.95rem] leading-relaxed;
   }
 
+  /* Пустые абзацы не должны схлопываться после сохранения */
+  .post-body p:empty,
+  .post-body p:has(> br:only-child) {
+    min-height: 1.5em;
+  }
+
   /* Заголовки */
   .post-body h2 {
-    @apply mt-6 mb-2 text-xl font-semibold tracking-tight;
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    @apply text-[24px] font-bold leading-none tracking-tight;
   }
 
   .post-body h3 {
@@ -353,4 +370,3 @@ html, body {
   animation-duration: calc(var(--globe-speed, 14s) * 1.25);
   opacity: 0.85;
 }
-

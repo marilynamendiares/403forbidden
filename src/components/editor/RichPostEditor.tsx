@@ -26,9 +26,10 @@ type Props = {
   value: string;
   onChange: (next: string) => void;
   disabled?: boolean;
+  tone?: "dark" | "light";
 };
 
-export function RichPostEditor({ value, onChange, disabled }: Props) {
+export function RichPostEditor({ value, onChange, disabled, tone = "dark" }: Props) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const editor = useEditor(
@@ -110,64 +111,30 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
     }
   };
 
-
-  const handleInsertImageClick = () => {
-    // простой вариант: запросить URL картинки вручную
-    const url = window.prompt("Image URL");
-    if (!url) return;
-    editor.chain().focus().setImage({ src: url, alt: "" }).run();
-  };
-
-  /**
-   * 🪝 uploadImageFile — крючок под будущий R2-upload.
-   *
-   * Сейчас:
-   *   • создаём локальный blob-URL для предпросмотра
-   * В будущем:
-   *   • здесь же можно будет дергать /api/uploads/images,
-   *     получить R2-URL и вернуть его вместо blob.
-   */
   async function uploadImageFile(file: File): Promise<string> {
-    // TODO: заменить на реальный upload + возвращаемый R2 URL
-    const url = URL.createObjectURL(file);
+    const form = new FormData();
+    form.append("file", file);
 
-    // При необходимости можно будет добавить URL.revokeObjectURL(...)
-    // после того, как изображение будет больше не нужно.
-    return url;
+    const res = await fetch("/api/uploads/images", {
+      method: "POST",
+      body: form,
+    });
+
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message =
+        (json && typeof json.message === "string" && json.message) ||
+        (json && typeof json.error === "string" && json.error) ||
+        `Upload failed (${res.status})`;
+      throw new Error(message);
+    }
+
+    if (!json || typeof json.url !== "string" || !json.url.trim()) {
+      throw new Error("Upload returned invalid URL");
+    }
+
+    return json.url;
   }
-
-    /**
-   * 🔮 FUTURE: вариант uploadImageFile через /api/uploads/images и R2
-   *
-   * Пример будущей реализации (НЕ включать, оставить как шпаргалку):
-   *
-   * async function uploadImageFile(file: File): Promise<string> {
-   *   const form = new FormData();
-   *   form.append("file", file);
-   *
-   *   const res = await fetch("/api/uploads/images", {
-   *     method: "POST",
-   *     body: form,
-   *     // credentials: "include", // если понадобится аутентификация
-   *   });
-   *
-   *   if (!res.ok) {
-   *     // можно показать понятное сообщение
-   *     const msg = await res.text().catch(() => "");
-   *     throw new Error(`Upload failed (${res.status}): ${msg}`);
-   *   }
-   *
-   *   const json = await res.json().catch(() => null);
-   *   if (!json || typeof json.url !== "string") {
-   *     throw new Error("Bad upload response");
-   *   }
-   *
-   *   // здесь уже R2/CDN URL
-   *   return json.url;
-   * }
-   */
-
-
   // если хочешь file-upload вместо prompt:
   const handleInsertImageFromFile = () => {
     fileInputRef.current?.click();
@@ -177,11 +144,33 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const url = await uploadImageFile(file);
+    try {
+      const url = await uploadImageFile(file);
+      editor.chain().focus().setImage({ src: url, alt: file.name }).run();
+    } catch (error) {
+      console.error("Image upload failed", error);
+      window.alert("Image upload failed. Check R2 config and try again.");
+    }
 
-    editor.chain().focus().setImage({ src: url, alt: file.name }).run();
     e.target.value = "";
   };
+
+  const toolbarTone =
+    tone === "light"
+      ? {
+          shell: "border-[#2D2D2D]/14 bg-[rgba(198,201,198,0.42)] text-[#2D2D2D] backdrop-blur-[2px]",
+          separator: "bg-[#2D2D2D]/10",
+          idleButton: "text-[#585B58] hover:bg-[rgba(120,126,121,0.14)] hover:text-[#2D2D2D]",
+          activeButton: "bg-[rgba(255,255,255,0.46)] text-[#2D2D2D] ring-1 ring-[#2D2D2D]/10",
+          status: "text-[#2D2D2D]/50",
+        }
+      : {
+          shell: "border-neutral-800 bg-neutral-950/80 text-neutral-100",
+          separator: "bg-neutral-700",
+          idleButton: "text-neutral-300 hover:bg-neutral-800 hover:text-white",
+          activeButton: "bg-neutral-200 text-black",
+          status: "text-neutral-300/60",
+        };
 
 
   const ToolbarButton: React.FC<{
@@ -207,8 +196,8 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
         (disabled
           ? "opacity-40 cursor-not-allowed"
           : active
-          ? "bg-neutral-200 text-black"
-          : "hover:bg-neutral-800")
+          ? toolbarTone.activeButton
+          : toolbarTone.idleButton)
       }
     >
       {children}
@@ -228,7 +217,12 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
       />
 
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 rounded-md border border-neutral-800 bg-neutral-950/80 px-2 py-1 text-xs">
+      <div
+        className={[
+          "flex flex-wrap items-center gap-1 rounded-md border px-2 py-1 text-xs",
+          toolbarTone.shell,
+        ].join(" ")}
+      >
         {/* inline styles */}
         <ToolbarButton
           onClick={() => editor.chain().focus().toggleBold().run()}
@@ -266,7 +260,7 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
           <Strikethrough className="h-3.5 w-3.5" />
         </ToolbarButton>
 
-        <span className="mx-1 h-4 w-px bg-neutral-700" />
+        <span className={["mx-1 h-4 w-px", toolbarTone.separator].join(" ")} />
 
         {/* headings / lists */}
         <ToolbarButton
@@ -298,7 +292,7 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
           <ListOrdered className="h-3.5 w-3.5" />
         </ToolbarButton>
 
-        <span className="mx-1 h-4 w-px bg-neutral-700" />
+        <span className={["mx-1 h-4 w-px", toolbarTone.separator].join(" ")} />
 
         {/* text / image alignment */}
         <ToolbarButton
@@ -329,7 +323,7 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
         </ToolbarButton>
 
 
-        <span className="mx-1 h-4 w-px bg-neutral-700" />
+        <span className={["mx-1 h-4 w-px", toolbarTone.separator].join(" ")} />
 
         {/* quote + code */}
         <ToolbarButton
@@ -370,7 +364,7 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
           <Minus className="h-3.5 w-3.5" />
         </ToolbarButton>
 
-        <span className="mx-1 h-4 w-px bg-neutral-700" />
+        <span className={["mx-1 h-4 w-px", toolbarTone.separator].join(" ")} />
 
         {/* image */}
 
@@ -385,7 +379,7 @@ export function RichPostEditor({ value, onChange, disabled }: Props) {
           <ImageIcon className="h-3.5 w-3.5" />
         </ToolbarButton>
 
-        <span className="ml-auto text-[11px] opacity-60">
+        <span className={["ml-auto text-[11px]", toolbarTone.status].join(" ")}>
           {disabled ? "Posting disabled" : "Rich text enabled"}
         </span>
       </div>

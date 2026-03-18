@@ -1,7 +1,6 @@
 // src/components/chapter/ChapterPostList.tsx
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChapterPostItem } from "./ChapterPostItem";
 import { useEventStream } from "@/features/realtime/client/useEventStream";
@@ -24,15 +23,12 @@ type Props = {
   slug: string;
   index: number | string;
   currentUserId?: string | null;
-  /** null / undefined → показываем END; число → ссылка на следующую главу */
-  nextChapterIndex?: number | null;
 };
 
 export function ChapterPostList({
   slug,
   index,
   currentUserId,
-  nextChapterIndex,
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -197,24 +193,6 @@ return (
 {/* ────────────────────────────────────────────────
     END / NEXT CHAPTER BUTTON
    ──────────────────────────────────────────────── */}
-{!loading && reachedEnd && (
-  <div className="pt-6 flex justify-end">
-    {nextChapterIndex ? (
-      <a
-        href={`/arcs/${slug}/${nextChapterIndex}`}
-        className="inline-flex items-center gap-2 rounded-md border border-white/30 
-                   px-4 py-2 text-sm text-white hover:bg-white hover:text-black 
-                   transition"
-      >
-        Next chapter →
-      </a>
-    ) : (
-      <div className="text-sm opacity-50 select-none">
-        End
-      </div>
-    )}
-  </div>
-)}
   </div>
 );
 
