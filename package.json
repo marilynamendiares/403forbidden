@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
+    "postinstall": "prisma generate",
     "migrate:content-html": "tsx scripts/migrate-content-html.ts",
     "seed:forum": "tsx scripts/seed-forum-categories.ts",
     "seed:shop": "tsx scripts/seed-shop.ts",
