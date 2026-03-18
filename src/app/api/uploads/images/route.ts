@@ -44,7 +44,12 @@ function getR2Client() {
 async function toWebStream(body: unknown): Promise<ReadableStream<Uint8Array>> {
   if (!body) throw new Error("Empty body");
 
-  if (typeof body.transformToWebStream === "function") {
+  if (
+    typeof body === "object" &&
+    body !== null &&
+    "transformToWebStream" in body &&
+    typeof body.transformToWebStream === "function"
+  ) {
     return body.transformToWebStream();
   }
 

@@ -3,7 +3,22 @@ import { prisma } from "@/server/db";
 
 export async function getBookBySlug(slug: string) {
   // В твоей схеме slug не уникален (уникален ownerId+slug), поэтому берём первый по slug.
-  return prisma.book.findFirst({ where: { slug } });
+  return prisma.book.findFirst({
+    where: { slug },
+    select: {
+      id: true,
+      ownerId: true,
+      title: true,
+      slug: true,
+      tagline: true,
+      coverUrl: true,
+      status: true,
+      type: true,
+      createdAt: true,
+      updatedAt: true,
+      introHtml: true,
+    },
+  });
 }
 
 export async function getFollowStatus(userId: string | null, bookId: string) {
