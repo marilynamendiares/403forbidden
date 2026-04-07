@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef } from "react";
 import { MoreHorizontal } from "lucide-react";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 export function ChapterActionsMenu({
   canToggle,
@@ -31,20 +32,9 @@ export function ChapterActionsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  useClickOutside(ref, open, () => setOpen(false));
 
   if (!canEdit) return null;
-
-  // закрытие меню по клику вне
-  useEffect(() => {
-    function onClick(e: MouseEvent) {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    if (open) document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [open]);
 
   return (
     <div className="relative" ref={ref}>
@@ -52,7 +42,7 @@ export function ChapterActionsMenu({
         type="button"
         aria-label="Chapter actions"
         onClick={() => setOpen((v) => !v)}
-        className="book-actions-menu-trigger"
+        className="entity-actions-menu-trigger"
       >
         <MoreHorizontal className="h-5 w-5" />
       </button>

@@ -13,45 +13,47 @@ export function atLeast(role: CollabRole, required: CollabRole) {
 }
 
 /**
- * Получить роль пользователя в рамках книги.
+ * Получить роль пользователя в рамках арки.
  * "VIEWER" | "AUTHOR" | "EDITOR" | "OWNER" | null
  */
 export async function getRole(
   userId: string | undefined,
-  bookId: string
+  arcId: string
 ): Promise<CollabRole | null> {
   if (!userId) return null;
 
-  const book = await prisma.book.findUnique({
-    where: { id: bookId },
-    select: { ownerId: true },
+  const arc = await prisma.arc.findUnique({
+    where: { id: arcId },
+    select: {
+      ownerId: true,
+      collaborators: {
+        where: { userId, pageId: null },
+        select: { role: true },
+        take: 1,
+      },
+    },
   });
-  if (!book) return null;
+  if (!arc) return null;
 
-  if (book.ownerId === userId) return "OWNER";
+  if (arc.ownerId === userId) return "OWNER";
 
-  const collab = await prisma.collaborator.findFirst({
-    where: { bookId, userId },
-    select: { role: true },
-  });
-
-  return collab?.role ?? null;
+  return arc.collaborators[0]?.role ?? null;
 }
 
-/** Вспомогательно: вычислить bookId из chapterId (возвращаем undefined вместо null) */
-async function getBookIdByChapterId(
+/** Вспомогательно: вычислить arcId из chapterId (возвращаем undefined вместо null) */
+async function getArcIdByChapterId(
   chapterId: string
 ): Promise<string | undefined> {
   const row = await prisma.chapter.findUnique({
     where: { id: chapterId },
-    select: { bookId: true },
+    select: { arcId: true },
   });
-  return row?.bookId; // ← undefined, если не найдено
+  return row?.arcId; // ← undefined, если не найдено
 }
 
 type RequireRoleObj = {
   userId?: string;
-  bookId?: string;
+  arcId?: string;
   chapterId?: string;
   /** Минимально допустимая роль */
   min?: CollabRole;
@@ -61,7 +63,7 @@ type RequireRoleObj = {
 
 export async function requireRole(
   userId: string | undefined,
-  bookId: string,
+  arcId: string,
   min: CollabRole
 ): Promise<CollabRole>;
 export async function requireRole(args: RequireRoleObj): Promise<CollabRole>;
@@ -71,34 +73,34 @@ export async function requireRole(
   c?: CollabRole
 ): Promise<CollabRole> {
   let userId: string | undefined;
-  let bookId: string | undefined;
+  let arcId: string | undefined;
   let chapterId: string | undefined;
   let min: CollabRole | undefined;
   let anyOf: CollabRole[] | undefined;
 
   if (typeof a === "string" || a === undefined) {
-    // старая сигнатура: (userId, bookId, min)
+    // старая сигнатура: (userId, arcId, min)
     userId = a as string | undefined;
-    bookId = b;
+    arcId = b;
     min = c;
   } else {
-    // новая сигнатура: ({ userId, bookId?, chapterId?, min?, anyOf? })
-    ({ userId, bookId, chapterId, min, anyOf } = a);
+    // новая сигнатура: ({ userId, arcId?, chapterId?, min?, anyOf? })
+    ({ userId, arcId, chapterId, min, anyOf } = a);
   }
 
   if (!userId) {
     throw Object.assign(new Error("Unauthorized"), { status: 401 });
   }
 
-  // Если передан chapterId — получаем bookId (с undefined, не null)
-  if (!bookId && chapterId) {
-    bookId = await getBookIdByChapterId(chapterId);
+  // Если передан chapterId — получаем arcId (с undefined, не null)
+  if (!arcId && chapterId) {
+    arcId = await getArcIdByChapterId(chapterId);
   }
-  if (!bookId) {
-    throw Object.assign(new Error("Book not found"), { status: 404 });
+  if (!arcId) {
+    throw Object.assign(new Error("Arc not found"), { status: 404 });
   }
 
-  const role = await getRole(userId, bookId);
+  const role = await getRole(userId, arcId);
   if (!role) {
     throw Object.assign(new Error("Forbidden"), { status: 403 });
   }

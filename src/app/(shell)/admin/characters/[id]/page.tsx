@@ -2,71 +2,34 @@
 
 import { use, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-
-type CharacterForm = {
-  age?: number | null;
-  gender?: string;
-  occupation?: string;
-  appearance?: string;
-  personality?: string;
-  background?: string;
-};
-
-type Item = {
-  id: string;
-  name: string;
-  form: CharacterForm;
-  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "NEEDS_CHANGES" | "APPROVED";
-  updatedAt: string;
-  lastSubmittedAt: string | null;
-  moderatorNote: string | null;
-  user: {
-    id: string;
-    email: string;
-    username: string;
-    profile: { displayName: string; avatarUrl: string | null } | null;
-  };
-};
-
+import AdminSectionCard from "@/components/admin/AdminSectionCard";
+import {
+  reviewCharacterApplication,
+} from "@/lib/characterApplicationClient";
+import { useAdminCharacterApplicationItem } from "@/hooks/useCharacterApplicationItem";
+import { CharacterApplicationReadonlyDetails } from "@/components/characters/CharacterApplicationUi";
 
 type Props = { params: Promise<{ id: string }> };
 
 export default function AdminCharacterReviewPage({ params }: Props) {
   const router = useRouter();
   const { id } = use(params);
-
-  const [item, setItem] = useState<Item | null>(null);
+  const { item, errorMessage, isLoading, refresh } = useAdminCharacterApplicationItem(id);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [hint, setHint] = useState("");
 
   const [isPending, startTransition] = useTransition();
 
-  async function load() {
-    setError("");
-    const res = await fetch(`/api/admin/characters/${id}`, { cache: "no-store" });
-    const data = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      setError(data?.error ?? "Failed to load");
-      setItem(null);
-      return;
-    }
-
-    const it = data?.item as Item;
-    setItem(it);
-    setNote(it?.moderatorNote ?? "");
-  }
-
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+    if (!item) return;
+    setNote(item.moderatorNote ?? "");
+  }, [item]);
 
-const displayUser = useMemo(() => {
-  if (!item) return "";
-  return item.user.profile?.displayName ?? item.user.username ?? item.user.email;
-}, [item]);
+  const displayUser = useMemo(() => {
+    if (!item) return "";
+    return item.user.profile?.displayName ?? item.user.username ?? item.user.email;
+  }, [item]);
 
   async function act(action: "APPROVE" | "NEEDS_CHANGES") {
     if (!item || isPending) return;
@@ -74,123 +37,126 @@ const displayUser = useMemo(() => {
     setHint("");
 
     startTransition(async () => {
-      const res = await fetch(`/api/admin/characters/${id}/review`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, note: note.trim() || undefined }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data?.error ?? "Action failed");
+      try {
+        await reviewCharacterApplication(id, {
+          action,
+          note: note.trim() || undefined,
+        });
+        setHint(action === "APPROVE" ? "Approved." : "Sent back (needs changes).");
+        await refresh();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Action failed");
         return;
       }
-      setHint(action === "APPROVE" ? "Approved." : "Sent back (needs changes).");
-      await load();
     });
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 pb-10 space-y-6">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <button
-            type="button"
-            onClick={() => router.push("/admin/characters")}
-            className="text-sm opacity-70 hover:opacity-100"
-          >
-            ← Back
-          </button>
-          <h1 className="text-2xl font-semibold mt-2">Review Application</h1>
-          {item && (
-            <p className="text-sm opacity-70">
-              {displayUser} • {item.status}
-            </p>
-          )}
-        </div>
+    <>
+      <div>
+        <button
+          type="button"
+          onClick={() => router.push("/admin/characters")}
+          className="text-sm opacity-70 hover:opacity-100"
+        >
+          ← Back to queue
+        </button>
       </div>
 
       {error && <div className="text-sm text-rose-400">{error}</div>}
+      {errorMessage && !error ? <div className="text-sm text-rose-400">{errorMessage}</div> : null}
 
       {!item ? (
-        <div className="text-sm opacity-60">Loading…</div>
+        <div className="text-sm opacity-60">{isLoading ? "Loading…" : "Application not found."}</div>
       ) : (
-        <div className="rounded-xl border border-neutral-900 p-5 space-y-5">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div>
-              <div className="text-xs opacity-60">Name</div>
-              <div className="text-lg font-semibold">{item.name}</div>
-            </div>
-            <div>
-              <div className="text-xs opacity-60">Age</div>
-              <div className="text-sm">{item.form?.age ?? "—"}</div>
-            </div>
-            <div>
-              <div className="text-xs opacity-60">Gender</div>
-              <div className="text-sm">{item.form?.gender || "—"}</div>
-            </div>
-            <div className="sm:col-span-3">
-              <div className="text-xs opacity-60">Occupation</div>
-              <div className="text-sm">{item.form?.occupation || "—"}</div>
-            </div>
+        <div className="grid gap-4 xl:grid-cols-[1.45fr_0.85fr]">
+          <div className="space-y-4">
+            <AdminSectionCard
+              eyebrow="Applicant"
+              title={item.name}
+              subtitle="Read the submission details below before moving the application forward."
+            >
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="rounded-xl border border-neutral-900 bg-neutral-950/35 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">Player</div>
+                  <div className="mt-2 text-sm text-neutral-200">{displayUser}</div>
+                </div>
+                <div className="rounded-xl border border-neutral-900 bg-neutral-950/35 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">Status</div>
+                  <div className="mt-2 text-sm text-neutral-200">{item.status}</div>
+                </div>
+                <div className="rounded-xl border border-neutral-900 bg-neutral-950/35 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">Updated</div>
+                  <div className="mt-2 text-sm text-neutral-200">{new Date(item.updatedAt).toLocaleString()}</div>
+                </div>
+                <div className="rounded-xl border border-neutral-900 bg-neutral-950/35 px-4 py-3">
+                  <div className="text-[11px] uppercase tracking-[0.2em] text-neutral-500">Submitted</div>
+                  <div className="mt-2 text-sm text-neutral-200">
+                    {item.lastSubmittedAt ? new Date(item.lastSubmittedAt).toLocaleString() : "Draft only"}
+                  </div>
+                </div>
+              </div>
+            </AdminSectionCard>
+
+            <AdminSectionCard title="Application Review" subtitle="Full readonly application details.">
+              <CharacterApplicationReadonlyDetails name={item.name} form={item.form} />
+            </AdminSectionCard>
           </div>
 
-          <div>
-            <div className="text-xs opacity-60 mb-1">Appearance</div>
-            <div className="whitespace-pre-wrap rounded-md border border-neutral-900 bg-neutral-950/30 p-3 text-sm">
-              {item.form?.appearance || "—"}
-            </div>
-          </div>
+          <div className="space-y-4 xl:sticky xl:top-6">
+            <AdminSectionCard
+              eyebrow="Action Rail"
+              title="Operator Actions"
+              subtitle="Leave a note or move the application to its next state."
+            >
+              <div className="space-y-2">
+                <div className="text-xs opacity-60">Moderator note (optional)</div>
+                <textarea
+                  className="min-h-[160px] w-full rounded-lg border border-neutral-800 bg-transparent px-3 py-2 text-sm"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  disabled={isPending}
+                />
+              </div>
 
-          <div>
-            <div className="text-xs opacity-60 mb-1">Personality</div>
-            <div className="whitespace-pre-wrap rounded-md border border-neutral-900 bg-neutral-950/30 p-3 text-sm">
-              {item.form?.personality || "—"}
-            </div>
-          </div>
+              <div className="mt-4 grid gap-3">
+                <button
+                  type="button"
+                  onClick={() => act("APPROVE")}
+                  disabled={isPending}
+                  className="w-full rounded-lg border border-neutral-800 px-4 py-2.5 text-sm hover:bg-neutral-900 disabled:opacity-50"
+                >
+                  Approve
+                </button>
+                <button
+                  type="button"
+                  onClick={() => act("NEEDS_CHANGES")}
+                  disabled={isPending}
+                  className="w-full rounded-lg border border-neutral-800 px-4 py-2.5 text-sm hover:bg-neutral-900 disabled:opacity-50"
+                >
+                  Needs changes
+                </button>
+              </div>
 
-          <div>
-            <div className="text-xs opacity-60 mb-1">Background</div>
-            <div className="whitespace-pre-wrap rounded-md border border-neutral-900 bg-neutral-950/30 p-3 text-sm">
-              {item.form?.background || "—"}
-            </div>
-          </div>
+              <div className="mt-4 text-xs">
+                {hint ? <span className="text-emerald-300">{hint}</span> : null}
+              </div>
+            </AdminSectionCard>
 
-          <div className="space-y-2">
-            <div className="text-xs opacity-60">Moderator note (optional)</div>
-            <textarea
-              className="w-full min-h-[120px] rounded-md border border-neutral-800 bg-transparent px-3 py-2 text-sm"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              disabled={isPending}
-            />
-          </div>
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => act("NEEDS_CHANGES")}
-                disabled={isPending}
-                className="rounded-md border border-neutral-800 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50"
-              >
-                Needs changes
-              </button>
-              <button
-                type="button"
-                onClick={() => act("APPROVE")}
-                disabled={isPending}
-                className="rounded-md border border-neutral-800 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-50"
-              >
-                Approve
-              </button>
-            </div>
-
-            <div className="text-xs">
-              {hint ? <span className="text-emerald-300">{hint}</span> : null}
-            </div>
+            <AdminSectionCard
+              eyebrow="Decision Guide"
+              title="Review Heuristic"
+              subtitle="Quick operator checklist to keep review decisions consistent."
+            >
+              <ul className="space-y-2 text-sm leading-6 text-neutral-400">
+                <li>Approve when the concept is clear, usable, and safe for onboarding into the game.</li>
+                <li>Use needs changes when the character is promising but missing clarity or required edits.</li>
+                <li>Keep the moderator note short, concrete, and helpful for the next action.</li>
+              </ul>
+            </AdminSectionCard>
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

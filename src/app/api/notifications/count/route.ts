@@ -1,16 +1,22 @@
-import { prisma } from "@/server/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { NextResponse } from "next/server";
+import { getUnreadCount } from "@/server/services/notifications";
+import { getSessionViewer } from "@/server/session";
+import { json } from "@/server/http";
+import { createServerTimingCollector } from "@/server/observability";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
-  if (!userId) return NextResponse.json({ count: 0 });
+  const timing = createServerTimingCollector();
+  const { userId } = await timing.measure(
+    "viewer_session",
+    () => getSessionViewer(),
+    "session viewer resolve"
+  );
+  if (!userId) return json({ count: 0 }, { headers: timing.toHeaders() });
 
-  const count = await prisma.notification.count({
-    where: { userId, isRead: false },
-  });
+  const count = await timing.measure(
+    "notifications_count",
+    () => getUnreadCount(userId),
+    "unread notifications count"
+  );
 
-  return NextResponse.json({ count });
+  return json({ count }, { headers: timing.toHeaders() });
 }

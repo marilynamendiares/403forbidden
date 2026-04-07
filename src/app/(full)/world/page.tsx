@@ -1,67 +1,9 @@
 // src/app/world/page.tsx
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { getSessionUserId } from "@/server/sessionUserId";
-import { isPlayer } from "@/server/player";
 import CornerArrow from "@/components/CornerArrow";
 import WorldHero from "@/components/world/WorldHero";
-import LayoutContainer from "@/components/LayoutContainer";
 
 export const dynamic = "force-dynamic";
-
-function Card({
-  href,
-  label,
-  desc,
-  meta,
-  locked,
-  className,
-}: {
-  href?: string;
-  label: string;
-  desc: string;
-  meta?: string;
-  locked?: boolean;
-  className?: string;
-}) {
-  const base =
-    "h-full border border-white/10 rounded-2xl p-5 bg-white/[0.02] hover:bg-white/[0.04] transition";
-  const inner = (
-    <div className="space-y-2">
-      <div className="flex items-start justify-between gap-4">
-        <div className="text-sm font-semibold">{label}</div>
-        {meta && (
-          <div className="text-xs font-mono uppercase tracking-[0.22em] opacity-50">
-            {meta}
-          </div>
-        )}
-      </div>
-      <p className="text-sm opacity-70">{desc}</p>
-      {locked && (
-        <div className="text-xs font-mono uppercase tracking-[0.22em] opacity-50">
-          ACCESS RESTRICTED
-        </div>
-      )}
-    </div>
-  );
-
-  if (!href || locked) {
-    return (
-      <div
-        className={[base, locked ? "opacity-70" : "", className ?? ""].join(" ")}
-      >
-        {inner}
-      </div>
-    );
-  }
-
-  return (
-    <Link href={href} className={[base, className ?? ""].join(" ")}>
-      {inner}
-    </Link>
-  );
-}
 
 function BigCard({
   href,
@@ -102,10 +44,8 @@ function BigCard({
 
 function QuickLinks({
   items,
-  layout = "grid",
 }: {
   items: Array<{ href?: string; label: string; desc?: string; disabled?: boolean }>;
-  layout?: "grid" | "world";
 }) {
   return (
     <div className="space-y-3">
@@ -195,10 +135,6 @@ function QuickLinks({
 }
 
 export default async function WorldIndexPage() {
-  const session = await getServerSession(authOptions);
-  const me = getSessionUserId(session);
-  const player = me ? await isPlayer(me) : false;
-
   return (
     <div className="space-y-10">
       {/* Optional: keep a subtle back link if you want */}

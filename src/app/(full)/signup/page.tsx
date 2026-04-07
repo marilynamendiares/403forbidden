@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { signupWithEmail } from "@/lib/authFlowClient";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -16,21 +17,14 @@ export default function SignupPage() {
     setLoading(true);
     setError("");
 
-    const res = await fetch("/api/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password, username }),
-    });
-
+    const { ok, payload } = await signupWithEmail({ email, password, username });
     setLoading(false);
 
-    const data = await res.json().catch(() => ({}));
-
-    if (res.ok) {
+    if (ok) {
       // после успешной регистрации — ведём подтверждать email
       router.push(`/verify-email?email=${encodeURIComponent(email)}`);
     } else {
-      setError(data.error || "Registration failed");
+      setError(payload.error || "Registration failed");
     }
   }
 

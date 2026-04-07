@@ -3,19 +3,11 @@
 
 import Link from "next/link";
 import BrandMark from "@/app/BrandMark";
-import { useContext } from "react";
-import { ShellUIContext } from "@/app/shell/ShellUIContext";
+import { useShellUI } from "@/app/shell/ShellUIContext";
 
 export default function GlobalBrand() {
-  const shell = useContext(ShellUIContext);
-  const sidebarOpen = shell?.sidebarOpen ?? false;
-  const setBrandHover = (hovered: boolean) => {
-    window.dispatchEvent(
-      new CustomEvent("global-brand-hover", {
-        detail: { hovered },
-      })
-    );
-  };
+  const { sidebarOpen, setBrandHover } = useShellUI();
+  const buildId = process.env.NEXT_PUBLIC_BUILD_ID ?? "dev";
 
   return (
     <div
@@ -36,13 +28,24 @@ export default function GlobalBrand() {
           href="/"
           className={[
             "header-font-archimoto",
+            "inline-flex flex-col items-start",
             "uppercase",
             "text-[15px] leading-none",
             "text-foreground hover:text-white transition",
             "select-none",
           ].join(" ")}
         >
-          <BrandMark text="403 Forbidden" tail={sidebarOpen ? "<" : "_"} />
+          <BrandMark
+            text="403 Forbidden"
+            tail={sidebarOpen ? "<" : "_"}
+            className="leading-none"
+          />
+          <span className="mt-1 block w-full text-[8px] leading-none tracking-[0.13em] text-[#7E7E7E]">
+            EARLY DEVELOPMENT BUILD
+          </span>
+          <span className="mt-1 block w-full text-[8px] leading-none tracking-[0.13em] text-[#7E7E7E]">
+            #{buildId}
+          </span>
         </Link>
       </div>
     </div>

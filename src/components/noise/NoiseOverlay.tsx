@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useId } from "react";
+import { mixBlendMultiply, mixBlendScreen } from "@/lib/uiStyles";
 
 type NoiseOverlayProps = {
   className?: string;
@@ -30,7 +31,7 @@ export default function NoiseOverlay({
     <svg
       aria-hidden="true"
       className={className}
-      style={{ ...style, opacity, mixBlendMode: blendMode as any }}
+      style={{ ...style, opacity, mixBlendMode: blendMode }}
       preserveAspectRatio="none"
       width="100%"
       height="100%"
@@ -91,7 +92,7 @@ export default function NoiseOverlay({
         fill="#000"
         filter={`url(#${sandId})`}
         opacity={sandOpacity}
-        style={{ mixBlendMode: "multiply" as any }}
+        style={{ mixBlendMode: mixBlendMultiply }}
         pointerEvents="none"
       />
 
@@ -102,7 +103,7 @@ export default function NoiseOverlay({
         fill="#fff"
         filter={`url(#${sparkId})`}
         opacity={sparkleOpacity}
-        style={{ mixBlendMode: "screen" as any }}
+        style={{ mixBlendMode: mixBlendScreen }}
         pointerEvents="none"
       />
     </svg>

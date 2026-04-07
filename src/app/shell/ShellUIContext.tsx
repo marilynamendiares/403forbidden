@@ -1,11 +1,14 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { readLocalStorage, writeLocalStorage } from "@/lib/browserStorage";
 
 type ShellUIState = {
   sidebarOpen: boolean;
+  brandHover: boolean;
   restored: boolean;
   setSidebarOpen: (v: boolean) => void;
+  setBrandHover: (v: boolean) => void;
   toggleSidebar: () => void;
   openSidebar: () => void;
   closeSidebar: () => void;
@@ -18,6 +21,7 @@ const LS_KEY = "403.shell.sidebarOpen";
 
 export function ShellUIProvider({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [brandHover, setBrandHover] = useState(false);
   const [restored, setRestored] = useState(false);
 
 useEffect(() => {
@@ -27,11 +31,10 @@ useEffect(() => {
   // restore
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem(LS_KEY);
-      if (raw === null) return;
-      setSidebarOpen(raw === "1");
-    } catch {
-      // ignore
+      const raw = readLocalStorage(LS_KEY);
+      if (raw !== null) {
+        setSidebarOpen(raw === "1");
+      }
     } finally {
       setRestored(true);
     }
@@ -40,23 +43,21 @@ useEffect(() => {
   // persist
   useEffect(() => {
     if (!restored) return;
-    try {
-      window.localStorage.setItem(LS_KEY, sidebarOpen ? "1" : "0");
-    } catch {
-      // ignore
-    }
+    writeLocalStorage(LS_KEY, sidebarOpen ? "1" : "0");
   }, [restored, sidebarOpen]);
 
   const value = useMemo<ShellUIState>(() => {
     return {
       sidebarOpen,
+      brandHover,
       restored,
       setSidebarOpen,
+      setBrandHover,
       toggleSidebar: () => setSidebarOpen((v) => !v),
       openSidebar: () => setSidebarOpen(true),
       closeSidebar: () => setSidebarOpen(false),
     };
-  }, [restored, sidebarOpen]);
+  }, [brandHover, restored, sidebarOpen]);
 
   return <ShellUIContext.Provider value={value}>{children}</ShellUIContext.Provider>;
 }

@@ -1,31 +1,18 @@
 export const runtime = "nodejs";
 
-import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { prisma } from "@/server/db";
+import { type NextRequest } from "next/server";
 import { z } from "zod";
+import { getRouteErrorResponse, requireApiUserId } from "@/server/api";
+import { error, json } from "@/server/http";
+import {
+  createCharacterApplicationForUser,
+  listCharacterApplicationsForUser,
+} from "@/server/services/characterApplications";
 
 export async function GET() {
-  const session = await getServerSession(authOptions);
-  const me = (session as any)?.user?.id ?? (session as any)?.userId;
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const items = await prisma.characterApplication.findMany({
-    where: { userId: me },
-    orderBy: { updatedAt: "desc" },
-    select: {
-      id: true,
-      name: true,
-      status: true,
-      updatedAt: true,
-      createdAt: true,
-      lastSubmittedAt: true,
-      moderatorNote: true, // ✅ нужно для NEEDS_CHANGES preview
-    },
-  });
-
-  return NextResponse.json({ items });
+  const me = await requireApiUserId();
+  const items = await listCharacterApplicationsForUser(me);
+  return json({ items });
 }
 
 const CreateSchema = z.object({
@@ -33,30 +20,17 @@ const CreateSchema = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const me = (session as any)?.user?.id ?? (session as any)?.userId;
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
+  const me = await requireApiUserId();
   const parsed = CreateSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  if (!parsed.success) return error("bad_request", 400);
 
   const name = parsed.data.name.trim();
-  if (name.length < 2) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  if (name.length < 2) return error("bad_request", 400);
 
-  const draftsCount = await prisma.characterApplication.count({
-    where: { userId: me, status: "DRAFT" },
-  });
-  if (draftsCount >= 10) return NextResponse.json({ error: "too_many_drafts" }, { status: 429 });
-
-  const row = await prisma.characterApplication.create({
-    data: {
-      userId: me,
-      name,
-      form: {},
-      status: "DRAFT",
-    },
-    select: { id: true },
-  });
-
-  return NextResponse.json({ ok: true, id: row.id });
+  try {
+    const row = await createCharacterApplicationForUser({ userId: me, name });
+    return json({ ok: true, id: row.id });
+  } catch (routeError) {
+    return getRouteErrorResponse(routeError, "internal_error");
+  }
 }

@@ -3,6 +3,7 @@
 
 import { useMemo, useState } from "react";
 import { Star } from "lucide-react";
+import { buyShopItem } from "@/lib/shopClient";
 
 type Item = {
   id: string;
@@ -43,62 +44,38 @@ export default function ShopClient({
 
   async function buy(itemId: string) {
     setBusyId(itemId);
-    const res = await fetch("/api/shop/buy", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ itemId }),
-      cache: "no-store",
-      credentials: "include",
-    });
-    setBusyId(null);
+    try {
+      const json = await buyShopItem(itemId);
+      const nextWallet = json?.wallet
+        ? {
+            eurodollars: json.wallet.eurodollars ?? wallet.eurodollars,
+            reputationTotal: json.wallet.reputationTotal ?? wallet.reputationTotal,
+          }
+        : wallet;
 
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      alert(`Buy failed (${res.status}) ${msg}`);
-      return;
+      setWallet(nextWallet);
+      setItems((prev) =>
+        prev.map((it) => {
+          const nextOwned = it.id === itemId ? true : it.alreadyOwned;
+          const hasFunds = nextWallet.eurodollars >= it.priceEurodollars;
+          const hasRep = nextWallet.reputationTotal >= it.requiredReputation;
+          const canBuy = !nextOwned && hasFunds && hasRep;
+
+          return {
+            ...it,
+            alreadyOwned: nextOwned,
+            lockedByFunds: !hasFunds,
+            lockedByReputation: !hasRep,
+            canBuy,
+          };
+        })
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Buy failed";
+      window.alert(message);
+    } finally {
+      setBusyId(null);
     }
-
-    const json = await res.json().catch(() => null);
-
-    // 1) обновляем wallet (приходит из buy endpoint)
-    if (json?.wallet) {
-      setWallet({
-        eurodollars: json.wallet.eurodollars ?? wallet.eurodollars,
-        reputationTotal: json.wallet.reputationTotal ?? wallet.reputationTotal,
-      });
-    }
-
-    // 2) помечаем owned
-    setItems((prev) =>
-      prev.map((it) =>
-        it.id === itemId
-          ? { ...it, alreadyOwned: true, canBuy: false }
-          : it
-      )
-    );
-
-    // 3) пересчитываем locks/canBuy для всех товаров по новому балансу
-    const nextWallet = json?.wallet
-      ? {
-          eurodollars: json.wallet.eurodollars ?? wallet.eurodollars,
-          reputationTotal: json.wallet.reputationTotal ?? wallet.reputationTotal,
-        }
-      : wallet;
-
-    setItems((prev) =>
-      prev.map((it) => {
-        const hasFunds = nextWallet.eurodollars >= it.priceEurodollars;
-        const hasRep = nextWallet.reputationTotal >= it.requiredReputation;
-        const canBuy = !it.alreadyOwned && hasFunds && hasRep;
-
-        return {
-          ...it,
-          lockedByFunds: !hasFunds,
-          lockedByReputation: !hasRep,
-          canBuy,
-        };
-      })
-    );
   }
 
   return (

@@ -2,11 +2,20 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
-import { Heart, Star } from "lucide-react";
-import Markdown from "@/components/Markdown";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
-import AvatarImg from "@/components/avatarImg";
+import { clearDraft, readDraft, writeDraft } from "@/lib/draftStorage";
+import { getWriterSaveErrorMessage, getWriterStatusLabel } from "@/lib/writerStatus";
+import {
+  deleteChapterPost,
+  grantChapterPostReputation,
+  toggleChapterPostLike,
+  updateChapterPost,
+} from "@/lib/chapterPostInteractionsClient";
+import {
+  ChapterPostEditActions,
+  ChapterPostHeader,
+  ChapterPostReactions,
+} from "@/components/chapter/ChapterPostUi";
 
 
 export function ChapterPostItem(props: {
@@ -22,7 +31,7 @@ export function ChapterPostItem(props: {
     repCount?: number;
     repGivenByMe?: boolean;
   };
-  author: { id: string; username: string; avatarUrl: string | null };
+  author: { id: string; username: string | null; avatarUrl: string | null };
   currentUserId?: string | null;
   slug?: string;
   index?: number | string;
@@ -52,10 +61,6 @@ export function ChapterPostItem(props: {
   }, [post.likesCount, post.likedByMe, post.repCount, post.repGivenByMe]);
 
   const canReact = !!currentUserId && !isMine && !!slug && !!index;
-  const likeIconActive = likedByMe || likesCount > 0;
-  const repIconActive = repGivenByMe || repCount > 0;
-
-
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(post.contentMd);
   const [busy, setBusy] = useState(false);
@@ -73,8 +78,8 @@ export function ChapterPostItem(props: {
 
   // статус локального драфта
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
   const [draftRestored, setDraftRestored] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const canSave = !busy && text.trim().length > 0 && dirty;
 
@@ -84,48 +89,35 @@ export function ChapterPostItem(props: {
   useEffect(() => {
     if (!editing || !draftKey) return;
 
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (!raw) {
-        setDraftRestored(false);
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as { content?: string } | null;
-      if (!parsed || typeof parsed.content !== "string") {
-        setDraftRestored(false);
-        return;
-      }
-
-      const draft = parsed.content;
-      const draftEmpty = draft.trim().length === 0;
-      const baselineEmpty = baseline.trim().length === 0;
-
-      // есть ли смысл в драфте?
-      let hasMeaningful = false;
-      if (!baselineEmpty) {
-        hasMeaningful = !draftEmpty; // если уже есть текст на сервере — нужен непустой черновик
-      } else {
-        hasMeaningful = !draftEmpty; // новый пост — любой непустой драфт имеет смысл
-      }
-
-      const differsFromBaseline = draft !== baseline;
-
-      if (!hasMeaningful || !differsFromBaseline) {
-        // драфт бессмысленный — очищаем
-        localStorage.removeItem(draftKey);
-        setDraftRestored(false);
-        return;
-      }
-
-      // подхватываем драфт в редактор
-      setText(draft);
-      setDraftRestored(true);
-      setSaveState("saved");
-      setLastSavedAt(null);
-    } catch {
+    const parsed = readDraft<{ content?: string }>(draftKey);
+    if (!parsed || typeof parsed.content !== "string") {
       setDraftRestored(false);
+      return;
     }
+
+    const draft = parsed.content;
+    const draftEmpty = draft.trim().length === 0;
+    const baselineEmpty = baseline.trim().length === 0;
+
+    let hasMeaningful = false;
+    if (!baselineEmpty) {
+      hasMeaningful = !draftEmpty;
+    } else {
+      hasMeaningful = !draftEmpty;
+    }
+
+    const differsFromBaseline = draft !== baseline;
+
+    if (!hasMeaningful || !differsFromBaseline) {
+      clearDraft(draftKey);
+      setDraftRestored(false);
+      return;
+    }
+
+    setText(draft);
+    setDraftRestored(true);
+    setSaveState("saved");
+    setSaveError(null);
   }, [editing, draftKey, baseline]);
 
   // ─────────────────────────────────────────────────────────────
@@ -135,44 +127,35 @@ export function ChapterPostItem(props: {
     if (!editing || !draftKey) return;
 
     if (!dirty) {
-      // нет отличий от baseline — очищаем локальный драфт
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {}
+      clearDraft(draftKey);
       setSaveState("idle");
-      setLastSavedAt(null);
       return;
     }
 
     setSaveState("saving");
 
     const timeout = window.setTimeout(() => {
-      try {
-        const content = text;
-        const draftEmpty = content.trim().length === 0;
-        const baselineEmpty = baseline.trim().length === 0;
+      const content = text;
+      const draftEmpty = content.trim().length === 0;
+      const baselineEmpty = baseline.trim().length === 0;
 
-        let hasMeaningful = false;
-        if (!baselineEmpty) {
-          hasMeaningful = !draftEmpty;
-        } else {
-          hasMeaningful = !draftEmpty;
-        }
+      let hasMeaningful = false;
+      if (!baselineEmpty) {
+        hasMeaningful = !draftEmpty;
+      } else {
+        hasMeaningful = !draftEmpty;
+      }
 
-        const differsFromBaseline = content !== baseline;
+      const differsFromBaseline = content !== baseline;
 
-        if (!hasMeaningful || !differsFromBaseline) {
-          localStorage.removeItem(draftKey);
-          setSaveState("idle");
-          setLastSavedAt(null);
-          return;
-        }
+      if (!hasMeaningful || !differsFromBaseline) {
+        clearDraft(draftKey);
+        setSaveState("idle");
+        return;
+      }
 
-        localStorage.setItem(draftKey, JSON.stringify({ content }));
+      if (writeDraft(draftKey, { content })) {
         setSaveState("saved");
-        setLastSavedAt(Date.now());
-      } catch {
-        // ignore
       }
     }, 400);
 
@@ -180,22 +163,21 @@ export function ChapterPostItem(props: {
   }, [editing, text, dirty, draftKey, baseline]);
 
   const hasDraftState = draftRestored || dirty || saveState === "saving" || saveState === "saved";
-  const statusLabel = draftRestored
-    ? "local draft restored"
-    : hasDraftState
-      ? "draft saved"
-      : "no local changes";
+  const statusLabel = getWriterStatusLabel({
+    draftRestored,
+    hasDraftState,
+    saveState,
+    dirty,
+  });
 
   // сброс локального драфта
   function discardLocalDraft() {
     if (!draftKey) return;
-    try {
-      localStorage.removeItem(draftKey);
-    } catch {}
+    clearDraft(draftKey);
     setText(baseline);
     setDraftRestored(false);
     setSaveState("idle");
-    setLastSavedAt(null);
+    setSaveError(null);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -206,34 +188,27 @@ export function ChapterPostItem(props: {
     if (!canSave) return;
 
     setBusy(true);
-    const res = await fetch(`/api/books/${slug}/${index}/posts/${post.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ contentMd: text }),
-      cache: "no-store",
-      credentials: "include",
-    });
-    setBusy(false);
+    try {
+      const json = await updateChapterPost({
+        slug,
+        index,
+        postId: post.id,
+        contentMd: text,
+      });
+      onAfterChange?.("updated", post.id, json?.post ?? { contentMd: text });
 
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      alert(`Failed to save (${res.status}) ${msg}`);
+      clearDraft(draftKey);
+      setDraftRestored(false);
+      setSaveState("idle");
+      setSaveError(null);
+      setEditing(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save";
+      setSaveError(getWriterSaveErrorMessage(message, "chapter post"));
       return;
+    } finally {
+      setBusy(false);
     }
-
-    const json = await res.json().catch(() => null);
-    onAfterChange?.("updated", post.id, json?.post ?? { contentMd: text });
-
-    // успешный save → baseline на сервере обновится; локальный драфт больше не нужен
-    if (draftKey) {
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {}
-    }
-    setDraftRestored(false);
-    setSaveState("idle");
-    setLastSavedAt(null);
-    setEditing(false);
   }
 
   async function remove() {
@@ -241,27 +216,21 @@ export function ChapterPostItem(props: {
     if (!confirm("Delete this post?")) return;
 
     setBusy(true);
-    const res = await fetch(`/api/books/${slug}/${index}/posts/${post.id}`, {
-      method: "DELETE",
-      cache: "no-store",
-      credentials: "include",
-    });
-    setBusy(false);
-
-    if (!res.ok) {
-      const msg = await res.text().catch(() => "");
-      alert(`Failed to delete (${res.status}) ${msg}`);
+    try {
+      await deleteChapterPost({
+        slug,
+        index,
+        postId: post.id,
+      });
+      clearDraft(draftKey);
+      onAfterChange?.("deleted", post.id);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to delete";
+      window.alert(message);
       return;
+    } finally {
+      setBusy(false);
     }
-
-    // на удаление тоже чистим локальный драфт
-    if (draftKey) {
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {}
-    }
-
-    onAfterChange?.("deleted", post.id);
   }
 
   // отмена редактирования: закрываем редактор, but НЕ трогаем локальный драфт,
@@ -278,7 +247,7 @@ export function ChapterPostItem(props: {
       setText(baseline);
       setDraftRestored(false);
       setSaveState("idle");
-      setLastSavedAt(null);
+      setSaveError(null);
     }
   }, [baseline, editing]);
 
@@ -292,28 +261,11 @@ export function ChapterPostItem(props: {
 
   return (
     <article className="py-3 border-b border-border/50">
-      {/* ШАПКА: аватарка + мета в одну строку */}
-      <div className="flex items-center gap-3">
-        <div className="h-8 w-8 rounded-full overflow-hidden bg-muted shrink-0">
-          {author.avatarUrl ? (
-<AvatarImg
-  src={author.avatarUrl ?? undefined} // key only
-  alt=""
-  className="h-8 w-8 rounded-full object-cover"
-/>
-
-          ) : null}
-        </div>
-
-        <div className="text-sm text-muted-foreground">
-          posted by <span className="font-medium">@{author.username}</span>
-          {" • "}
-          <time dateTime={dt.toISOString()} title={display}>
-            {display}
-          </time>
-          {post.editedAt && <span className="ml-1 opacity-60">(edited)</span>}
-        </div>
-      </div>
+      <ChapterPostHeader
+        author={author}
+        display={display}
+        edited={Boolean(post.editedAt)}
+      />
 
       {/* ТЕЛО ПОСТА + РЕДАКТОР: на всю ширину контейнера */}
       <div className="mt-2 min-w-0">
@@ -362,147 +314,71 @@ export function ChapterPostItem(props: {
               )}
             </div>
 
-            <div className="flex items-center gap-4 text-neutral-500">
-              <button
-                type="button"
-                disabled={!canReact}
-                title={
-                  !canReact
-                    ? isMine
-                      ? "You cannot react to your own post"
-                      : "Login to react"
-                    : likedByMe
-                      ? "Remove like"
-                      : "Like"
-                }
-                className={[
-                  "inline-flex items-center gap-1 transition",
-                  !canReact ? "cursor-not-allowed opacity-40" : "hover:text-[#2D2D2D]",
-                  "text-neutral-500",
-                ].join(" ")}
-                onClick={async () => {
-                  if (!canReact) return;
+            <ChapterPostReactions
+              canReact={canReact}
+              isMine={isMine}
+              likedByMe={likedByMe}
+              likesCount={likesCount}
+              repGivenByMe={repGivenByMe}
+              repCount={repCount}
+              onToggleLike={async () => {
+                if (!canReact) return;
 
-                  const nextLiked = !likedByMe;
+                const nextLiked = !likedByMe;
 
-                  setLikedByMe(nextLiked);
-                  setLikesCount((c) => c + (nextLiked ? 1 : -1));
+                setLikedByMe(nextLiked);
+                setLikesCount((c) => c + (nextLiked ? 1 : -1));
 
-                  const res = await fetch(`/api/books/${slug}/${index}/posts/${post.id}/like`, {
-                    method: nextLiked ? "POST" : "DELETE",
-                    cache: "no-store",
-                    credentials: "include",
+                try {
+                  const json = await toggleChapterPostLike({
+                    slug,
+                    index,
+                    postId: post.id,
+                    nextLiked,
                   });
-
-                  if (!res.ok) {
-                    setLikedByMe(!nextLiked);
-                    setLikesCount((c) => c + (nextLiked ? -1 : 1));
-                    const msg = await res.text().catch(() => "");
-                    alert(`Like failed (${res.status}) ${msg}`);
-                    return;
-                  }
-
-                  const json = await res.json().catch(() => null);
                   if (json && typeof json.likesCount === "number") setLikesCount(json.likesCount);
                   if (json && typeof json.liked === "boolean") setLikedByMe(json.liked);
-                }}
-              >
-                <Heart
-                  className={["h-4 w-4", likeIconActive ? "text-[#B24B56]" : ""].join(" ")}
-                  fill={likeIconActive ? "currentColor" : "none"}
-                />
-                <span className="tabular-nums">{likesCount}</span>
-              </button>
-
-              <button
-                type="button"
-                disabled={!canReact || repGivenByMe}
-                title={
-                  !canReact
-                    ? isMine
-                      ? "You cannot react to your own post"
-                      : "Login to react"
-                    : repGivenByMe
-                      ? "Reputation already given"
-                      : "Give reputation (+1)"
+                } catch (error) {
+                  setLikedByMe(!nextLiked);
+                  setLikesCount((c) => c + (nextLiked ? -1 : 1));
+                  const message = error instanceof Error ? error.message : "Like failed";
+                  window.alert(message);
                 }
-                className={[
-                  "inline-flex items-center gap-1 transition",
-                  !canReact || repGivenByMe
-                    ? "cursor-not-allowed opacity-40"
-                    : "hover:text-[#2D2D2D]",
-                  "text-neutral-500",
-                ].join(" ")}
-                onClick={async () => {
-                  if (!canReact || repGivenByMe) return;
+              }}
+              onGiveReputation={async () => {
+                if (!canReact || repGivenByMe) return;
 
-                  setRepGivenByMe(true);
-                  setRepCount((c) => c + 1);
+                setRepGivenByMe(true);
+                setRepCount((c) => c + 1);
 
-                  const res = await fetch(
-                    `/api/books/${slug}/${index}/posts/${post.id}/reputation`,
-                    {
-                      method: "POST",
-                      headers: { "content-type": "application/json" },
-                      body: JSON.stringify({ amount: 1 }),
-                      cache: "no-store",
-                      credentials: "include",
-                    }
-                  );
-
-                  if (!res.ok) {
-                    setRepGivenByMe(false);
-                    setRepCount((c) => c - 1);
-                    const msg = await res.text().catch(() => "");
-                    alert(`Reputation failed (${res.status}) ${msg}`);
-                    return;
-                  }
-
-                  const json = await res.json().catch(() => null);
+                try {
+                  const json = await grantChapterPostReputation({
+                    slug,
+                    index,
+                    postId: post.id,
+                    amount: 1,
+                  });
                   if (json && typeof json.repCount === "number") setRepCount(json.repCount);
-                }}
-              >
-                <Star
-                  className={["h-4 w-4", repIconActive ? "text-[#B89A42]" : ""].join(" ")}
-                  fill={repIconActive ? "currentColor" : "none"}
-                />
-                <span className="tabular-nums">{repCount}</span>
-              </button>
-            </div>
+                } catch (error) {
+                  setRepGivenByMe(false);
+                  setRepCount((c) => c - 1);
+                  const message = error instanceof Error ? error.message : "Reputation failed";
+                  window.alert(message);
+                }
+              }}
+            />
           </div>
         ) : isMine ? (
-          <div className="mt-2 flex gap-3 text-xs text-muted-foreground">
-            <div className="flex w-full items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <button
-                    onClick={saveEdit}
-                    disabled={!canSave}
-                    className="hover:text-foreground disabled:opacity-50"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={cancelEdit}
-                    disabled={busy}
-                    className="hover:text-foreground disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-                <div className="flex items-center gap-3 text-[11px] text-neutral-500">
-                  <span>{statusLabel}</span>
-                  {hasDraftState && (
-                    <button
-                      type="button"
-                      onClick={discardLocalDraft}
-                      className="hover:text-foreground"
-                    >
-                      reset
-                    </button>
-                  )}
-                </div>
-            </div>
-          </div>
+          <ChapterPostEditActions
+            canSave={canSave}
+            busy={busy}
+            statusLabel={statusLabel}
+            saveError={saveError}
+            hasDraftState={hasDraftState}
+            onSave={saveEdit}
+            onCancel={cancelEdit}
+            onResetDraft={discardLocalDraft}
+          />
         ) : null}
       </div>
     </article>

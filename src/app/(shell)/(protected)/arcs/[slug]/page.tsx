@@ -1,33 +1,53 @@
 // src/app/arcs/[slug]/page.tsx
 
 // ===== Imports =================================================================
-import { headers, cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
+import { getArcViewerAccess } from "@/server/arcs/access";
 import ChaptersLiveClient from "@/features/chapters/ui/ChaptersLiveClient";
-import { getBookBySlug, getFollowStatus } from "@/server/follow";
-import { FollowBookButton } from "@/components/follow/FollowBookButton";
+import { getArcBySlug, getArcFollowStatus } from "@/server/follow";
+import { FollowArcButton } from "@/components/follow/FollowArcButton";
 import CollapsibleSection from "@/components/CollapsibleSection";
-import { DeleteBookControl } from "@/components/book/DeleteBookControl";
-import { BookIntroClient } from "@/components/book/BookIntroClient";
+import { DeleteArcControl } from "@/components/arc/DeleteArcControl";
+import { ArcIntroClient } from "@/components/arc/ArcIntroClient";
+import { ArcMetadataEditor } from "@/components/arc/ArcMetadataEditor";
 import { StickyCenterRail } from "@/components/layout/StickyCenterRail";
 import { StickyRightRail } from "@/components/layout/StickyRightRail";
 import ShellScrollModeSetter from "@/app/shell/ShellScrollMode";
 import ShellVariantSetter from "@/app/shell/ShellVariant";
 import ShellSurfaceSetter from "@/app/shell/ShellSurface";
+import ReadStateTracker from "@/components/arcs/ReadStateTracker";
+import { getSessionViewer, requireSessionUserId } from "@/server/session";
+import { listChaptersForViewer } from "@/server/services/chapters";
+import { createChapterForUser } from "@/server/services/chapters";
+import {
+  addArcCollaboratorForOwner,
+  deleteArcForUser,
+  getArcPageCollaborators,
+  removeArcCollaboratorForOwner,
+  updateArcForUser,
+} from "@/server/services/arcs";
 
 
 // ===== Next.js runtime =========================================================
 export const dynamic = "force-dynamic";
 
 // ===== Types ===================================================================
-type BookChapters = { book: { title: string }; chapters: any[] };
+type ArcChapterListItem = {
+  id: string;
+  index: number;
+  title: string;
+  publishedAt: string | null;
+  _count?: { posts?: number };
+  postsCount?: number;
+  postCount?: number;
+};
+
+type ArcChapters = { arc: { id: string; title: string; ownerId: string }; chapters: ArcChapterListItem[] };
 
 type CollaboratorsPayload = {
-  book: { id: string; slug: string; title: string; ownerId: string };
+  arc: { id: string; slug: string; title: string; ownerId: string };
   owner: {
     id: string;
     email: string | null;
@@ -41,45 +61,47 @@ type CollaboratorsPayload = {
       username: string | null;
       profile: { displayName: string | null; avatarUrl: string | null } | null;
     };
-    role: "EDITOR" | "VIEWER";
+    role: "OWNER" | "EDITOR" | "AUTHOR" | "VIEWER";
   }>;
 } | null;
 
+function getPostsCountLabel(chapter: ArcChapterListItem) {
+  const postsCountRaw =
+    (chapter._count?.posts as number | undefined) ??
+    (chapter.postsCount as number | undefined) ??
+    (chapter.postCount as number | undefined);
 
-// ===== Data loaders (SSR fetch with cookies) ===================================
-async function getBook(slug: string): Promise<BookChapters> {
-  const h = await headers();
-  const origin =
-    h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-  const cookie = (await cookies()).toString();
-
-  const res = await fetch(`${origin}/api/books/${slug}/chapters`, {
-    cache: "no-store",
-    headers: cookie ? { cookie } : {},
-  });
-
-  if (!res.ok) {
-    return { book: { title: slug.replace(/-/g, " ") }, chapters: [] };
-  }
-  return (await res.json()) as BookChapters;
+  return typeof postsCountRaw === "number"
+    ? String(postsCountRaw).padStart(2, "0")
+    : "--";
 }
 
-async function getCollaborators(slug: string): Promise<CollaboratorsPayload> {
-  const h = await headers();
-  const origin =
-    h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-  const cookie = (await cookies()).toString();
 
-  const res = await fetch(`${origin}/api/books/${slug}/collaborators`, {
-    cache: "no-store",
-    headers: cookie ? { cookie } : {},
-  });
-  if (!res.ok) return null;
-  return res.json();
+// ===== Data loaders ============================================================
+async function getArc(slug: string, viewerId: string | null): Promise<ArcChapters> {
+  const result = await listChaptersForViewer({ slug, viewerId });
+  if (!result) {
+    return {
+      arc: { id: "", title: slug.replace(/-/g, " "), ownerId: "" },
+      chapters: [],
+    };
+  }
+
+  return {
+    arc: result.arc,
+    chapters: result.chapters as ArcChapterListItem[],
+  };
+}
+
+async function getCollaborators(_arcId: string, slug: string, viewerId: string | null): Promise<CollaboratorsPayload> {
+  return (await getArcPageCollaborators({
+    viewerUserId: viewerId,
+    slug,
+  })) as CollaboratorsPayload;
 }
 
 // ===== Page ====================================================================
-export default async function BookPage({
+export default async function ArcPage({
   params,
 }: {
   params: Promise<{ slug: string }>;
@@ -88,23 +110,28 @@ export default async function BookPage({
   const { slug } = await params;
 
   // ----- Auth session (to derive role correctly) --------------------------------
-  const session = await getServerSession(authOptions);
-  const me = session?.user?.id ?? null;
+  const { userId: me } = await getSessionViewer();
 
-  // ----- Book meta for follow button (id needed) --------------------------------
-const bookMeta = await getBookBySlug(slug); // может быть null, если книга не найдена
-const followInitial =
-  bookMeta ? await getFollowStatus(me, bookMeta.id) : { followed: false, count: 0 };
+  // ----- Arc meta for follow button (id needed) ---------------------------------
+  const arcMeta = await getArcBySlug(slug); // может быть null, если арка не найдена
+  if (!arcMeta) notFound();
+
+  const access = await getArcViewerAccess({ viewerId: me, arc: arcMeta });
+  if (!access.canRead) notFound();
+
+  const followInitial =
+    arcMeta ? await getArcFollowStatus(me, arcMeta.id) : { followed: false, count: 0 };
 
 
   // ----- Fetch data -------------------------------------------------------------
-  const [{ book, chapters }, collabData] = await Promise.all([
-    getBook(slug),
-    getCollaborators(slug),
+  const [{ arc, chapters }, collabData] = await Promise.all([
+    getArc(slug, me),
+    getCollaborators(arcMeta.id, slug, me),
   ]);
+  const arcInfo = arc ?? { title: slug.replace(/-/g, " ") };
 
   // ----- Role resolution (OWNER / EDITOR / VIEWER) ------------------------------
-  let meRole: "OWNER" | "EDITOR" | "VIEWER" | null = null;
+  let meRole: "OWNER" | "EDITOR" | "AUTHOR" | "VIEWER" | null = null;
   if (me && collabData) {
     if (collabData.owner?.id === me) {
       meRole = "OWNER";
@@ -113,111 +140,118 @@ const followInitial =
       meRole = mine?.role ?? null;
     }
   }
-  const canEditBook = meRole === "OWNER" || meRole === "EDITOR"; // only OWNER/EDITOR
+  const canEditArcIntro = meRole === "OWNER";
+  const canManageArc = meRole === "OWNER" || meRole === "EDITOR";
+  const canManageCollaborators = meRole === "OWNER";
+  const canDeleteArc = meRole === "OWNER";
 
   // ===== Server Actions =========================================================
 
-  // -- Delete book ---------------------------------------------------------------
-  async function deleteBook() {
+  // -- Delete arc ----------------------------------------------------------------
+  async function deleteArc() {
     "use server";
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-    const res = await fetch(`${origin}/api/books/${slug}`, {
-      method: "DELETE",
-      headers: { cookie },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Failed to delete book (${res.status}): ${txt}`);
+    const userId = await requireSessionUserId();
+    const deleted = await deleteArcForUser({ userId, slug });
+    if (!deleted) {
+      throw new Error("Failed to delete arc");
     }
 
     revalidatePath("/arcs");
     redirect("/arcs");
   }
 
-  // -- Publish chapter (from list) ----------------------------------------------
-  async function publishChapter(formData: FormData) {
-    "use server";
-    const index = Number(formData.get("index"));
-    if (!Number.isFinite(index) || index < 1) {
-      throw new Error("Bad chapter index");
-    }
-
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-    const res = await fetch(`${origin}/api/books/${slug}/${index}/publish`, {
-      method: "POST",
-      headers: { cookie },
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Failed to publish chapter (${res.status}): ${txt}`);
-    }
-
-    revalidatePath(`/arcs/${slug}`);
-  }
-
   // -- Create chapter ------------------------------------------------------------
   async function create(formData: FormData) {
     "use server";
     const title = String(formData.get("title") || "");
-
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-    const res = await fetch(`${origin}/api/books/${slug}/chapters`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ title, content: "", publish: false }),
-      cache: "no-store",
+    const userId = await requireSessionUserId();
+    await createChapterForUser({
+      slug,
+      userId,
+      title,
+      content: " ",
+      publish: false,
     });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Failed to create chapter (${res.status}): ${txt}`);
-    }
 
     revalidatePath(`/arcs/${slug}`);
   }
 
-  async function saveBookIntro(formData: FormData) {
+  async function saveArcIntro(formData: FormData) {
     "use server";
     const intro = String(formData.get("content") ?? "");
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+    const userId = await requireSessionUserId();
+    await updateArcForUser({ userId, slug, intro });
 
-    const res = await fetch(`${origin}/api/books/${slug}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ intro }),
-      cache: "no-store",
+    revalidatePath(`/arcs/${slug}`);
+  }
+
+  async function saveArcMetadata(formData: FormData) {
+    "use server";
+    const title = String(formData.get("title") ?? "").trim();
+    const tagline = String(formData.get("tagline") ?? "").trim();
+    const hook = String(formData.get("hook") ?? "").trim();
+    const summary = String(formData.get("summary") ?? "").trim();
+    const status = String(formData.get("status") ?? "").trim();
+    const format = String(formData.get("format") ?? "").trim();
+    const joinPolicy = String(formData.get("joinPolicy") ?? "").trim();
+    const visibility = String(formData.get("visibility") ?? "").trim();
+    const searchVisibility = String(formData.get("searchVisibility") ?? "").trim();
+    const allowDiscovery = formData.get("allowDiscovery") === "on";
+    const tags = formData
+      .getAll("tags")
+      .map((value) => String(value).trim())
+      .filter(Boolean);
+    const userId = await requireSessionUserId();
+
+    await updateArcForUser({
+      userId,
+      slug,
+      title,
+      tagline: tagline || null,
+      hook: hook || null,
+      summary: summary || null,
+      status: status as Parameters<typeof updateArcForUser>[0]["status"],
+      format: format as Parameters<typeof updateArcForUser>[0]["format"],
+      joinPolicy: joinPolicy as Parameters<typeof updateArcForUser>[0]["joinPolicy"],
+      visibility: visibility as Parameters<typeof updateArcForUser>[0]["visibility"],
+      searchVisibility: searchVisibility as Parameters<typeof updateArcForUser>[0]["searchVisibility"],
+      allowDiscovery,
+      tags,
     });
 
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Failed to update book intro (${res.status}): ${txt}`);
-    }
+    revalidatePath(`/arcs/${slug}`);
+    revalidatePath("/arcs");
+  }
 
+  async function removeCollaborator(collaboratorUserId: string) {
+    "use server";
+    const userId = await requireSessionUserId();
+    await removeArcCollaboratorForOwner({
+      ownerUserId: userId,
+      slug,
+      collaboratorUserId,
+    });
+    revalidatePath(`/arcs/${slug}`);
+  }
+
+  async function addCollaborator(formData: FormData) {
+    "use server";
+    const identifier = String(formData.get("identifier") || "");
+    const role = String(formData.get("role") || "EDITOR") as "EDITOR" | "VIEWER";
+    const userId = await requireSessionUserId();
+    await addArcCollaboratorForOwner({
+      ownerUserId: userId,
+      slug,
+      identifier,
+      role,
+    });
     revalidatePath(`/arcs/${slug}`);
   }
 
   // ===== Render (JSX) ===========================================================
   return (
     <div className="relative h-full min-h-0 overflow-hidden text-[#2D2D2D]">
+      {me && arcMeta ? <ReadStateTracker arcId={arcMeta.id} /> : null}
       <ShellScrollModeSetter mode="split" />
       <ShellVariantSetter variant="full" />
       <ShellSurfaceSetter surface="light" />
@@ -239,7 +273,7 @@ const followInitial =
           }
           stickySuffix={
             <span className="header-font-archimoto text-[15px] font-thin leading-none uppercase text-[#666666]">
-              {book.title}
+              {arcInfo.title}
             </span>
           }
         >
@@ -248,14 +282,14 @@ const followInitial =
               data-sticky-title
               className="text-[36px] leading-none font-bold text-[#2D2D2D]"
             >
-              {book.title}
+              {arcInfo.title}
             </h1>
 
-            <BookIntroClient
-              bookId={bookMeta?.id ?? slug}
-              canEdit={canEditBook}
-              defaultContent={bookMeta?.introHtml ?? ""}
-              onSave={saveBookIntro}
+            <ArcIntroClient
+              arcId={arcMeta?.id ?? slug}
+              canEdit={canEditArcIntro}
+              defaultContent={arcMeta?.introHtml ?? ""}
+              onSave={saveArcIntro}
             />
           </div>
         </StickyCenterRail>
@@ -263,8 +297,8 @@ const followInitial =
         <aside className="h-full min-h-0 min-w-0">
           <StickyRightRail
             sticky={
-              bookMeta ? (
-                <FollowBookButton
+              arcMeta ? (
+                <FollowArcButton
                   slug={slug}
                   initialFollowed={followInitial.followed}
                   initialCount={followInitial.count}
@@ -285,19 +319,10 @@ const followInitial =
                   <p className="opacity-60">No chapters yet.</p>
                 )}
 
-                {chapters.map((c: any) => {
+                {chapters.map((c) => {
                   const isDraft = !c.publishedAt;
                   const idx = String(c.index ?? 0).padStart(2, "0");
-
-                  const postsCountRaw =
-                    (c._count?.posts as number | undefined) ??
-                    (c.postsCount as number | undefined) ??
-                    (c.postCount as number | undefined);
-
-                  const postsCount =
-                    typeof postsCountRaw === "number"
-                      ? String(postsCountRaw).padStart(2, "0")
-                      : "--";
+                  const postsCount = getPostsCountLabel(c);
 
                   return (
                     <li key={c.id}>
@@ -333,7 +358,7 @@ const followInitial =
                 })}
               </ul>
 
-              {canEditBook && (
+              {canManageArc && (
                 <CollapsibleSection
                   label="New Chapter"
                   buttonClassName="bg-transparent !text-[#2D2D2D] hover:bg-transparent"
@@ -353,6 +378,25 @@ const followInitial =
                 </CollapsibleSection>
               )}
             </section>
+
+            {canManageArc && arcMeta ? (
+              <ArcMetadataEditor
+                action={saveArcMetadata}
+                initial={{
+                  title: arcMeta.title,
+                  tagline: arcMeta.tagline ?? null,
+                  hook: arcMeta.hook ?? null,
+                  summary: arcMeta.summary ?? null,
+                  status: arcMeta.status,
+                  format: arcMeta.format,
+                  joinPolicy: arcMeta.joinPolicy,
+                  visibility: arcMeta.visibility,
+                  searchVisibility: arcMeta.searchVisibility,
+                  allowDiscovery: arcMeta.allowDiscovery,
+                  tags: arcMeta.tags.map((entry) => entry.tag.slug),
+                }}
+              />
+            ) : null}
 
             {/* RIGHT: Collaborators */}
             <section className="mt-10 border border-neutral-800 rounded-xl p-4 space-y-3">
@@ -385,27 +429,13 @@ const followInitial =
                           {c.role.toLowerCase()}
                         </span>
 
-                        <form
-                          action={async () => {
-                            "use server";
-                            const cookie = (await cookies()).toString();
-                            const h = await headers();
-                            const origin =
-                              h.get("origin") ??
-                              `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-                            await fetch(`${origin}/api/books/${slug}/collaborators`, {
-                              method: "DELETE",
-                              headers: { "content-type": "application/json", cookie },
-                              body: JSON.stringify({ userId: c.user.id }),
-                              cache: "no-store",
-                            });
-                            revalidatePath(`/arcs/${slug}`);
-                          }}
-                        >
-                          <button className="text-xs underline opacity-70 hover:opacity-100">
-                            Remove
-                          </button>
-                        </form>
+                        {canManageCollaborators ? (
+                          <form action={removeCollaborator.bind(null, c.user.id)}>
+                            <button className="text-xs underline opacity-70 hover:opacity-100">
+                              Remove
+                            </button>
+                          </form>
+                        ) : null}
                       </li>
                     ))}
 
@@ -416,55 +446,38 @@ const followInitial =
                     )}
                   </ul>
 
-                  <form
-                    action={async (fd: FormData) => {
-                      "use server";
-                      const identifier = String(fd.get("identifier") || "");
-                      const role = String(fd.get("role") || "EDITOR");
-                      const cookie = (await cookies()).toString();
-                      const h = await headers();
-                      const origin =
-                        h.get("origin") ??
-                        `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-                      await fetch(`${origin}/api/books/${slug}/collaborators`, {
-                        method: "POST",
-                        headers: { "content-type": "application/json", cookie },
-                        body: JSON.stringify({ identifier, role }),
-                        cache: "no-store",
-                      });
-                      revalidatePath(`/arcs/${slug}`);
-                    }}
-                    className="flex items-center gap-2 pt-2"
-                  >
-                    <input
-                      name="identifier"
-                      placeholder="email or @username"
-                      className="w-full min-w-0 rounded bg-transparent border border-neutral-700 px-3 py-2 text-sm"
-                      required
-                    />
-                    <select
-                      name="role"
-                      className="rounded bg-transparent border border-neutral-700 px-2 py-2 text-sm"
-                      defaultValue="EDITOR"
-                    >
-                      <option value="EDITOR">Editor</option>
-                      <option value="VIEWER">Viewer</option>
-                    </select>
-                    <button className="rounded bg-white text-black px-3 py-2 text-sm">
-                      Add
-                    </button>
-                  </form>
+                  {canManageCollaborators ? (
+                    <form action={addCollaborator} className="flex items-center gap-2 pt-2">
+                      <input
+                        name="identifier"
+                        placeholder="email or @username"
+                        className="w-full min-w-0 rounded bg-transparent border border-neutral-700 px-3 py-2 text-sm"
+                        required
+                      />
+                      <select
+                        name="role"
+                        className="rounded bg-transparent border border-neutral-700 px-2 py-2 text-sm"
+                        defaultValue="EDITOR"
+                      >
+                        <option value="EDITOR">Editor</option>
+                        <option value="VIEWER">Viewer</option>
+                      </select>
+                      <button className="rounded bg-white text-black px-3 py-2 text-sm">
+                        Add
+                      </button>
+                    </form>
+                  ) : null}
                 </>
               )}
 
               <p className="opacity-60 text-xs">
-                Управление доступом доступно только владельцу книги.
+                Управление доступом доступно только владельцу арки.
               </p>
             </section>
 
-            {meRole === "OWNER" && (
+            {canDeleteArc && (
               <div className="mt-6 flex justify-end">
-                <DeleteBookControl action={deleteBook} />
+                <DeleteArcControl action={deleteArc} />
               </div>
             )}
             </div>

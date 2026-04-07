@@ -1,49 +1,73 @@
 // src/app/api/forum/posts/[id]/route.ts
-import { prisma } from "@/server/db";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
-import { publish } from "@/features/realtime/server/bus";
+import { z } from "zod";
+import { isAdminSession } from "@/server/admin";
+import {
+  deleteThreadPostForUser,
+  reportThreadPostForUser,
+  setThreadPostHiddenForAdmin,
+} from "@/server/services/forum";
+import { getRouteErrorResponse, requireApiUserId } from "@/server/api";
+import { getSessionViewer } from "@/server/session";
+import { json, noContent } from "@/server/http";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { id } = await params;
+  try {
+    const { session } = await getSessionViewer();
+    const userId = await requireApiUserId();
+    await deleteThreadPostForUser({
+      postId: id,
+      userId,
+      isAdmin: Boolean(isAdminSession(session)),
+    });
+    return noContent();
+  } catch (routeError) {
+    console.error("Failed to delete forum post", routeError);
+    return getRouteErrorResponse(routeError);
+  }
+}
 
-  const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
-  if (!userId) return new Response("Unauthorized", { status: 401 });
+const PatchSchema = z.object({
+  hidden: z.boolean(),
+});
 
-  const post = await prisma.forumPost.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      authorId: true,
-      threadId: true,
-      thread: {
-        select: {
-          id: true,
-          slug: true,
-          category: { select: { slug: true } },
-        },
-      },
-    },
-  });
+export async function PATCH(req: NextRequest, { params }: Ctx) {
+  const { id } = await params;
+  try {
+    const parsed = PatchSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return json({ error: "Bad Request" }, { status: 400 });
+    }
 
-  if (!post) return new Response("Not found", { status: 404 });
-  if (post.authorId !== userId) return new Response("Forbidden", { status: 403 });
+    const { session } = await getSessionViewer();
+    const userId = await requireApiUserId();
+    const result = await setThreadPostHiddenForAdmin({
+      postId: id,
+      userId,
+      hidden: parsed.data.hidden,
+      isAdmin: Boolean(isAdminSession(session)),
+    });
+    return json(result);
+  } catch (routeError) {
+    console.error("Failed to update forum post moderation state", routeError);
+    return getRouteErrorResponse(routeError);
+  }
+}
 
-  await prisma.forumPost.delete({ where: { id: post.id } });
-
-  // эмитим с threadId И category/slug — покроет оба типа подписчиков
-  await publish("thread:post_deleted", {
-    threadId: post.thread?.id ?? post.threadId,
-    category: post.thread?.category.slug ?? null,
-    slug: post.thread?.slug ?? null,
-    postId: post.id,
-    at: Date.now(),
-  });
-
-
-  return new Response(null, { status: 204 });
+export async function POST(_req: NextRequest, { params }: Ctx) {
+  const { id } = await params;
+  try {
+    const userId = await requireApiUserId();
+    const result = await reportThreadPostForUser({
+      postId: id,
+      userId,
+    });
+    return json(result, { status: result.alreadyReported ? 200 : 201 });
+  } catch (routeError) {
+    console.error("Failed to report forum post", routeError);
+    return getRouteErrorResponse(routeError);
+  }
 }

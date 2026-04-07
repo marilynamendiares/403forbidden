@@ -1,76 +1,28 @@
 // src/app/(shell)/forum/page.tsx
 import Link from "next/link";
-import { headers } from "next/headers";
-import { ssrFetch } from "@/server/ssrFetch";
-
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { getSessionUserId } from "@/server/sessionUserId";
-import { isPlayer } from "@/server/player";
-
+import {
+  FORUM_DISCUSSION_SLUGS,
+  sortForumSlugs,
+} from "@/server/forumPresentation";
+import { getSessionViewer } from "@/server/session";
 import ShellVariantSetter from "@/app/shell/ShellVariant";
 import ForumPinnedTiles from "@/app/(shell)/forum/ForumPinnedTiles";
+import { isAdminSession } from "@/server/admin";
+import { listVisibleForumCategories } from "@/server/services/forumCategories";
 
 export const dynamic = "force-dynamic"; // не кешируем
 export const revalidate = 0;
 
-type Category = {
-  id: string;
-  slug: string;
-  title: string;
-  desc: string | null;
-  _count: { threads: number };
-  readVisibility?: "PUBLIC" | "MEMBERS" | "PLAYERS" | "ADMIN" | null;
-};
-
-async function getCategories(): Promise<Category[]> {
-  const h = await headers();
-  const origin =
-    h.get("origin") ??
-    `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-  const url = new URL(`${origin}/api/forum/categories`);
-
-  try {
-    // ✅ IMPORTANT: forward cookies so /api can see the logged-in user
-    const r = await ssrFetch(url);
-
-    if (!r.ok) return [];
-    const data = (await r.json()) as Category[] | any;
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
-}
-
 export default async function ForumIndexPage() {
-  const [all, session] = await Promise.all([
-    getCategories(),
-    getServerSession(authOptions),
-  ]);
+  const viewer = await getSessionViewer();
+  const { categories } = await listVisibleForumCategories({
+    userId: viewer.userId,
+    isAdmin: isAdminSession(viewer.session),
+  });
 
-  const me = getSessionUserId(session);
-  const player = me ? await isPlayer(me) : false;
-
-  // Forum should contain only "discussion" categories
-  const FORUM_SLUGS = new Set(["welcome", "support", "offtopic", "player-hub"]);
-  const items = all.filter((c) => FORUM_SLUGS.has(c.slug));
-
-  // single ordered list (no section headings)
-  const ORDERED_SLUGS = ["welcome", "offtopic", "player-hub", "support"] as const;
-
-  // restrict visibility: non-player only sees PUBLIC categories
-  const visible = items
-    .filter((c) => {
-      const vis = (c.readVisibility ?? "MEMBERS") as string;
-      if (player) return true;
-      return vis === "PUBLIC";
-    })
-    .sort((a, b) => {
-      const ai = ORDERED_SLUGS.indexOf(a.slug as any);
-      const bi = ORDERED_SLUGS.indexOf(b.slug as any);
-      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
-    });
+  const visible = sortForumSlugs(
+    categories.filter((category) => FORUM_DISCUSSION_SLUGS.has(category.slug))
+  );
 
   return (
     <>
@@ -78,9 +30,9 @@ export default async function ForumIndexPage() {
       <ShellVariantSetter variant="full" />
 
       <div className="space-y-6">
-        {items.length === 0 && <p className="opacity-60">No categories yet.</p>}
+        {visible.length === 0 && <p className="opacity-60">No categories yet.</p>}
 
-        {items.length > 0 && (
+        {visible.length > 0 && (
           <div className="space-y-8">
             {/* NEWS */}
 <section className="space-y-6">

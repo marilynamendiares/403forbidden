@@ -17,7 +17,7 @@ function getSubscriber(): Redis | null {
   });
 }
 
-function safeJson(s: any) {
+function safeJson(s: unknown) {
   if (typeof s !== "string") return s;
   try {
     return JSON.parse(s);

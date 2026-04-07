@@ -1,19 +1,15 @@
 // src/app/characters/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-
-type Item = {
-  id: string;
-  name: string;
-  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "NEEDS_CHANGES" | "APPROVED";
-  updatedAt: string;
-  createdAt: string;
-  lastSubmittedAt: string | null;
-  moderatorNote?: string | null; // ✅ чтобы можно было показать note в списке
-};
+import {
+  useCharacterApplications,
+  type CharacterApplicationListItem,
+} from "@/hooks/useCharacterApplications";
+import { createCharacterApplication } from "@/lib/characterApplicationClient";
+import type { CharacterApplicationStatus } from "@/lib/characterApplication";
 
 function formatDt(iso: string) {
   try {
@@ -23,7 +19,7 @@ function formatDt(iso: string) {
   }
 }
 
-function statusBadge(s: Item["status"]) {
+function statusBadge(s: CharacterApplicationStatus) {
   const base =
     "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] uppercase tracking-wide";
   switch (s) {
@@ -51,74 +47,37 @@ export default function CharactersListPage() {
 
 function CharactersListPageInner() {
   const router = useRouter();
-  const [items, setItems] = useState<Item[]>([]);
   const [name, setName] = useState("");
-  const [loadingList, setLoadingList] = useState(true);
   const [error, setError] = useState<string>("");
   const [isPending, startTransition] = useTransition();
   const sp = useSearchParams();
   const required = sp.get("required") === "1";
+  const {
+    items,
+    errorMessage,
+    isLoading: loadingList,
+    refresh,
+  } = useCharacterApplications();
 
 
   const canCreate = useMemo(() => name.trim().length >= 2, [name]);
-
-  async function load() {
-    setLoadingList(true);
-    setError("");
-    const res = await fetch("/api/characters", { cache: "no-store" });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(data?.error ?? "Failed to load");
-      setLoadingList(false);
-      return;
-    }
-
-    const arr = Array.isArray(data?.items) ? (data.items as Item[]) : [];
-    // лёгкая сортировка: нужные статусы чуть выше, но не ломаем updatedAt
-    const prio: Record<Item["status"], number> = {
-      NEEDS_CHANGES: 0,
-      DRAFT: 1,
-      SUBMITTED: 2,
-      UNDER_REVIEW: 3,
-      APPROVED: 4,
-    };
-    arr.sort((a, b) => {
-      const p = prio[a.status] - prio[b.status];
-      if (p !== 0) return p;
-      return (b.updatedAt ?? "").localeCompare(a.updatedAt ?? "");
-    });
-
-    setItems(arr);
-    setLoadingList(false);
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
 
   async function create() {
     if (!canCreate || isPending) return;
     setError("");
 
     startTransition(async () => {
-      const res = await fetch("/api/characters", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: name.trim() }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setError(data?.error ?? "Failed to create");
+      try {
+        const id = await createCharacterApplication(name.trim());
+        if (id) {
+          router.push(`/characters/${id}`);
+        } else {
+          await refresh();
+          setName("");
+        }
+      } catch (error) {
+        setError(error instanceof Error ? error.message : "Failed to create");
         return;
-      }
-
-      const id = data?.id as string | undefined;
-      if (id) {
-        router.push(`/characters/${id}`);
-      } else {
-        await load();
-        setName("");
       }
     });
   }
@@ -166,7 +125,9 @@ function CharactersListPageInner() {
             {isPending ? "Creating…" : "Create"}
           </button>
         </div>
-        {error && <p className="mt-2 text-sm text-rose-400">{error}</p>}
+        {(error || errorMessage) && (
+          <p className="mt-2 text-sm text-rose-400">{error || errorMessage}</p>
+        )}
       </div>
 
       {/* List */}
@@ -177,7 +138,7 @@ function CharactersListPageInner() {
           <p className="text-sm opacity-70">No applications yet.</p>
         ) : (
           <div className="divide-y divide-neutral-900 rounded-xl border border-neutral-900">
-            {items.map((it) => {
+            {items.map((it: CharacterApplicationListItem) => {
               const showNote = it.status === "NEEDS_CHANGES" && !!it.moderatorNote?.trim();
               return (
                 <button

@@ -7,6 +7,6 @@ export function slugify(input: string) {
       .replace(/[\u0300-\u036f]/g, "") // снять диакритику
       .replace(/[^a-z0-9]+/g, "-")     // не латиница/цифры → дефис
       .replace(/^-+|-+$/g, "")         // обрезать дефисы по краям
-      .slice(0, 64) || "book"          // fallback если пусто
+      .slice(0, 64) || "arc"           // fallback если пусто
   );
 }

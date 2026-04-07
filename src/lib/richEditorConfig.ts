@@ -5,11 +5,21 @@ import Underline from "@tiptap/extension-underline";
 import TextAlign from "@tiptap/extension-text-align";
 import Image from "@tiptap/extension-image";
 import Mention from "@tiptap/extension-mention";
+import type {
+  SuggestionKeyDownProps,
+  SuggestionOptions,
+  SuggestionProps,
+} from "@tiptap/suggestion";
 
 export type MentionItem = {
   id: string;
   username: string;
   label: string;
+};
+
+type MentionSelectItem = {
+  id: string | null;
+  label?: string | null;
 };
 
 // Пока демо-юзеры; потом сюда приедет API
@@ -20,6 +30,130 @@ const DEMO_USERS: MentionItem[] = [
 
 // Базовый путь к профилю
 const MENTION_PROFILE_BASE = "/u";
+
+const mentionSuggestion: Omit<SuggestionOptions<MentionItem, MentionSelectItem>, "editor"> = {
+  char: "@",
+
+  items: ({ query }: { query: string }) => {
+    const q = (query ?? "").toLowerCase().trim();
+    if (!q) return DEMO_USERS.slice(0, 5);
+    return DEMO_USERS.filter((u) =>
+      u.username.toLowerCase().includes(q)
+    ).slice(0, 5);
+  },
+
+  render() {
+    let dom: HTMLDivElement | null = null;
+    let items: MentionItem[] = [];
+    let selectedIndex = 0;
+
+    let command: ((props: MentionSelectItem) => void) | null = null;
+
+    const renderList = () => {
+      if (!dom) return;
+      dom.innerHTML = items
+        .map(
+          (item, index) => `
+            <div class="mention-item ${
+              index === selectedIndex ? "is-selected" : ""
+            }" data-index="${index}">
+              @${item.username}
+            </div>
+          `
+        )
+        .join("");
+    };
+
+    const updatePosition = (props: SuggestionProps<MentionItem, MentionSelectItem>) => {
+      if (!dom) return;
+      const rect = props.clientRect?.();
+      if (!rect) return;
+
+      const { left, bottom } = rect;
+      const scrollX = window.scrollX ?? window.pageXOffset ?? 0;
+      const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
+
+      dom.style.left = `${left + scrollX}px`;
+      dom.style.top = `${bottom + scrollY + 4}px`;
+    };
+
+    return {
+      onStart(props: SuggestionProps<MentionItem, MentionSelectItem>) {
+        items = props.items ?? [];
+        selectedIndex = 0;
+        command = props.command;
+
+        dom = document.createElement("div");
+        dom.className = "mention-suggest";
+        dom.style.position = "absolute";
+        dom.style.zIndex = "9999";
+        document.body.appendChild(dom);
+
+        dom.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          const target = event.target as HTMLElement | null;
+          const el = target?.closest("[data-index]") as HTMLElement | null;
+          if (!el || !command) return;
+
+          const idx = Number(el.dataset.index ?? "-1");
+          const item = items[idx];
+          if (!item) return;
+
+          command({ id: item.id, label: item.username });
+        });
+
+        updatePosition(props);
+        renderList();
+      },
+
+      onUpdate(props: SuggestionProps<MentionItem, MentionSelectItem>) {
+        items = props.items ?? [];
+        selectedIndex = 0;
+        command = props.command;
+        updatePosition(props);
+        renderList();
+      },
+
+      onKeyDown(props: SuggestionKeyDownProps) {
+        if (!items.length) return false;
+        const event: KeyboardEvent = props.event;
+
+        if (event.key === "ArrowDown") {
+          selectedIndex = (selectedIndex + 1) % items.length;
+          renderList();
+          return true;
+        }
+
+        if (event.key === "ArrowUp") {
+          selectedIndex =
+            (selectedIndex - 1 + items.length) % items.length;
+          renderList();
+          return true;
+        }
+
+        if (event.key === "Enter") {
+          const item = items[selectedIndex];
+          if (!item || !command) return false;
+
+          command({ id: item.id, label: item.username });
+          return true;
+        }
+
+        return false;
+      },
+
+      onExit() {
+        if (dom && dom.parentNode) {
+          dom.parentNode.removeChild(dom);
+        }
+        dom = null;
+        items = [];
+        selectedIndex = 0;
+        command = null;
+      },
+    };
+  },
+};
 
 // ─────────────────────────────────────────────────────────────
 // Mention
@@ -71,133 +205,7 @@ const mentionExtension = Mention.extend({
   HTMLAttributes: {
     class: "mention-node",
   },
-
-  suggestion: {
-    char: "@",
-
-    items: ({ query }: { query: string }) => {
-      const q = (query ?? "").toLowerCase().trim();
-      if (!q) return DEMO_USERS.slice(0, 5);
-      return DEMO_USERS.filter((u) =>
-        u.username.toLowerCase().includes(q)
-      ).slice(0, 5);
-    },
-
-    render() {
-      let dom: HTMLDivElement | null = null;
-      let items: MentionItem[] = [];
-      let selectedIndex = 0;
-
-      // внутренняя команда mention’а
-      let command:
-        | ((props: { id: string; label: string }) => void)
-        | null = null;
-
-      const renderList = () => {
-        if (!dom) return;
-        dom.innerHTML = items
-          .map(
-            (item, index) => `
-            <div class="mention-item ${
-              index === selectedIndex ? "is-selected" : ""
-            }" data-index="${index}">
-              @${item.username}
-            </div>
-          `
-          )
-          .join("");
-      };
-
-      const updatePosition = (props: any) => {
-        if (!dom) return;
-        const rect = props.clientRect?.();
-        if (!rect) return;
-
-        const { left, bottom } = rect;
-        const scrollX = window.scrollX ?? window.pageXOffset ?? 0;
-        const scrollY = window.scrollY ?? window.pageYOffset ?? 0;
-
-        dom.style.left = `${left + scrollX}px`;
-        dom.style.top = `${bottom + scrollY + 4}px`;
-      };
-
-      return {
-        onStart(props: any) {
-          items = props.items ?? [];
-          selectedIndex = props.selectedIndex ?? 0;
-          command = props.command;
-
-          dom = document.createElement("div");
-          dom.className = "mention-suggest";
-          dom.style.position = "absolute";
-          dom.style.zIndex = "9999";
-          document.body.appendChild(dom);
-
-          dom.addEventListener("mousedown", (event) => {
-            event.preventDefault();
-            const target = event.target as HTMLElement | null;
-            const el = target?.closest("[data-index]") as HTMLElement | null;
-            if (!el || !command) return;
-
-            const idx = Number(el.dataset.index ?? "-1");
-            const item = items[idx];
-            if (!item) return;
-
-            command({ id: item.id, label: item.username });
-          });
-
-          updatePosition(props);
-          renderList();
-        },
-
-        onUpdate(props: any) {
-          items = props.items ?? [];
-          selectedIndex = props.selectedIndex ?? 0;
-          command = props.command;
-          updatePosition(props);
-          renderList();
-        },
-
-        onKeyDown(props: any) {
-          if (!items.length) return false;
-          const event: KeyboardEvent = props.event;
-
-          if (event.key === "ArrowDown") {
-            selectedIndex = (selectedIndex + 1) % items.length;
-            renderList();
-            return true;
-          }
-
-          if (event.key === "ArrowUp") {
-            selectedIndex =
-              (selectedIndex - 1 + items.length) % items.length;
-            renderList();
-            return true;
-          }
-
-          if (event.key === "Enter") {
-            const item = items[selectedIndex];
-            if (!item || !command) return false;
-
-            command({ id: item.id, label: item.username });
-            return true;
-          }
-
-          return false;
-        },
-
-        onExit() {
-          if (dom && dom.parentNode) {
-            dom.parentNode.removeChild(dom);
-          }
-          dom = null;
-          items = [];
-          selectedIndex = 0;
-          command = null;
-        },
-      };
-    },
-  } as any,
+  suggestion: mentionSuggestion,
 });
 
 // ─────────────────────────────────────────────────────────────

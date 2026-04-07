@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { resendEmailCode, verifyEmailCode } from "@/lib/authFlowClient";
 
 export default function VerifyEmailPage() {
   return (
@@ -39,14 +41,9 @@ function VerifyEmailPageInner() {
 
     setStatus("verifying");
     try {
-      const res = await fetch("/api/auth/verify-email", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, code: c }),
-      });
-      const payload = await res.json().catch(() => ({}));
+      const { ok, payload } = await verifyEmailCode({ email, code: c });
 
-      if (!res.ok) {
+      if (!ok) {
         const key = payload?.error ?? "verify_failed";
         if (key === "code_expired") setError("Code expired. Please resend.");
         else if (key === "too_many_tries") setError("Too many attempts. Please resend.");
@@ -74,14 +71,9 @@ function VerifyEmailPageInner() {
 
     setStatus("resending");
     try {
-      const res = await fetch("/api/auth/resend-code", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const payload = await res.json().catch(() => ({}));
+      const { ok, payload } = await resendEmailCode(email);
 
-      if (!res.ok) {
+      if (!ok) {
         if (payload?.error === "too_fast") {
           setError("Please wait a bit before resending.");
         } else {
@@ -147,9 +139,9 @@ function VerifyEmailPageInner() {
 
         <div className="pt-2 text-center text-sm opacity-70">
           Wrong email?{" "}
-          <a className="underline hover:opacity-100" href="/signup">
+          <Link className="underline hover:opacity-100" href="/signup">
             Go back
-          </a>
+          </Link>
         </div>
       </form>
     </main>

@@ -1,6 +1,7 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext } from "react";
+import { useStackedConfigValue } from "@/app/shell/stackedConfig";
 
 export type ShellVariant = "center" | "full";
 
@@ -11,26 +12,13 @@ const Ctx = createContext<{
 } | null>(null);
 
 export function ShellVariantProvider({ children }: { children: React.ReactNode }) {
-  const [entries, setEntries] = useState<Array<{ id: string; variant: ShellVariant }>>([]);
-
-  const registerVariant = useCallback((id: string, variant: ShellVariant) => {
-    setEntries((prev) => {
-      const next = prev.filter((entry) => entry.id !== id);
-      next.push({ id, variant });
-      return next;
-    });
-  }, []);
-
-  const unregisterVariant = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((entry) => entry.id !== id));
-  }, []);
-
-  const variant = entries.length > 0 ? entries[entries.length - 1]!.variant : "center";
-
-  const value = useMemo(
-    () => ({ variant, registerVariant, unregisterVariant }),
-    [registerVariant, unregisterVariant, variant]
-  );
+  const { value: variant, registerValue, unregisterValue } =
+    useStackedConfigValue<ShellVariant>("center");
+  const value = {
+    variant,
+    registerVariant: registerValue,
+    unregisterVariant: unregisterValue,
+  };
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

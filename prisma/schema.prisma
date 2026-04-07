@@ -10,10 +10,11 @@ generator client {
 }
 
 // ---------- Enums ----------
-enum BookStatus {
+enum ArcStatus {
   ONGOING
   FINISHED
   HIATUS
+  ABANDONED
 }
 
 enum UserStatus {
@@ -41,9 +42,32 @@ enum CollabRole {
   VIEWER
 }
 
-enum BookType {
+enum ArcType {
   SOLO
   COOP
+}
+
+enum ArcFormat {
+  SOLO
+  DUO
+  GROUP
+}
+
+enum ArcJoinPolicy {
+  PRIVATE
+  CURATED
+  OPEN
+}
+
+enum ArcVisibility {
+  STANDARD
+  UNDERGROUND
+}
+
+enum ArcSearchVisibility {
+  PUBLIC
+  LIMITED
+  HIDDEN
 }
 
 enum CharacterAppStatus {
@@ -77,10 +101,11 @@ model User {
   profile          Profile?
   avatars          UserAvatar[]
   roles            UserRole[]
-  books            Book[]
+  arcs             Arc[]
   pages            Page[]
   threads          ForumThread[]
   posts            ForumPost[]
+  forumPostReports ForumPostReport[]
   comments         Comment[]
   reactions        Reaction[]
   follows          Follow[]       @relation("UserFollows")
@@ -90,15 +115,20 @@ model User {
   editAudits       EditAudit[]
   turns            TurnQueue[] // ← backref for TurnQueue.user
   chaptersAuthored Chapter[]      @relation("ChapterAuthor")
-  BookFollow       BookFollow[]
+  arcFollows       ArcFollow[]
   chapterPosts     ChapterPost[] // ← обратная связь из ChapterPost.author
+  arcReadStates    ArcReadState[]
 
   // --- Economy / Shop / Reputation (MVP) ---
   wallet                 Wallet?
+  walletLedger           WalletLedger[]
   inventory              InventoryItem[]
   chapterPostLikes       ChapterPostLike[]
   chapterPostRepGiven    ChapterPostReputationGrant[] @relation("RepFrom")
   chapterPostRepReceived ChapterPostReputationGrant[] @relation("RepTo")
+  forumPostLikes         ForumPostLike[]
+  forumPostRepGiven      ForumPostReputationGrant[]   @relation("ForumRepFrom")
+  forumPostRepReceived   ForumPostReputationGrant[]   @relation("ForumRepTo")
 
   @@index([lastSeenAt(sort: Desc)])
   @@index([status, deletedAt])
@@ -169,34 +199,48 @@ model Page {
 }
 
 // ---------- Books & Chapters ----------
-model Book {
+model Arc {
   id        String     @id @default(cuid())
   ownerId   String
   owner     User       @relation(fields: [ownerId], references: [id])
   title     String
   slug      String
+  publicSlug String?   @unique
   tagline   String?
+  summary   String?
+  hook      String?
   introHtml String?
   coverUrl  String?
-  status    BookStatus @default(ONGOING)
-  type      BookType   @default(SOLO)
+  status    ArcStatus @default(ONGOING)
+  type      ArcType   @default(SOLO)
+  format    ArcFormat @default(SOLO)
+  joinPolicy ArcJoinPolicy @default(PRIVATE)
+  visibility ArcVisibility @default(STANDARD)
+  searchVisibility ArcSearchVisibility @default(PUBLIC)
+  allowDiscovery Boolean @default(true)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   chapters      Chapter[]
-  tags          BookTag[]
+  tags          ArcTag[]
   followers     Follow[]
   collaborators Collaborator[]
   turns         TurnQueue[]
-  BookFollow    BookFollow[]
+  arcFollows    ArcFollow[]
+  metrics       ArcMetrics?
+  searchDocument ArcSearchDocument?
+  readStates    ArcReadState[]
 
   @@unique([ownerId, slug])
+  @@index([publicSlug])
+  @@index([allowDiscovery, searchVisibility, visibility])
+  @@index([status, format, updatedAt(sort: Desc)])
 }
 
 model Chapter {
   id          String      @id @default(cuid())
-  bookId      String
-  book        Book        @relation(fields: [bookId], references: [id])
+  arcId       String
+  arc         Arc         @relation(fields: [arcId], references: [id])
   index       Int
   title       String
   content     Json
@@ -228,12 +272,13 @@ model Chapter {
 
   // NEW: посты внутри главы (append-only поток)
   posts ChapterPost[]
+  readStates ArcReadState[] @relation("ArcReadStateLastChapter")
 
   comments   Comment[]
   editAudits EditAudit[]
 
-  @@unique([bookId, index])
-  @@index([bookId, isDraft, publishedAt(sort: Desc)])
+  @@unique([arcId, index])
+  @@index([arcId, isDraft, publishedAt(sort: Desc)])
   @@index([authorId])
   @@index([lastPostAt(sort: Desc)])
 }
@@ -255,6 +300,7 @@ model ChapterPost {
   // --- MVP: likes + reputation under this post ---
   likes            ChapterPostLike[]
   reputationGrants ChapterPostReputationGrant[]
+  readStates       ArcReadState[] @relation("ArcReadStateLastPost")
 
   @@index([chapterId, createdAt, id]) // стабильный курсор (createdAt,id)
   @@index([authorId])
@@ -296,15 +342,22 @@ model ForumThread {
   title      String
   slug       String
   createdAt  DateTime      @default(now())
+  lastActivityAt DateTime  @default(now())
   updatedAt  DateTime      @updatedAt
   locked     Boolean       @default(false) // ← NEW
+  hiddenAt   DateTime?
+  hiddenById String?
+  deletedAt  DateTime?
+  deletedById String?
 
   posts         ForumPost[]
   tags          ThreadTag[]
   followsThread Follow[]    @relation("FollowThread")
 
   @@unique([categoryId, slug])
-  @@index([categoryId, createdAt])
+  @@index([categoryId, lastActivityAt, id])
+  @@index([categoryId, hiddenAt, deletedAt, lastActivityAt, id])
+  @@index([categoryId, deletedAt, lastActivityAt, id])
 }
 
 model ForumPost {
@@ -317,11 +370,61 @@ model ForumPost {
   markdown  String?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
+  hiddenAt DateTime?
+  hiddenById String?
+  deletedAt DateTime?
+  deletedById String?
 
   comments   Comment[]
   editAudits EditAudit[] // ← backref for EditAudit.post
+  reports    ForumPostReport[]
+  likes      ForumPostLike[]
+  reputationGrants ForumPostReputationGrant[]
 
-  @@index([threadId, createdAt])
+  @@index([threadId, createdAt, id])
+  @@index([threadId, hiddenAt, deletedAt, createdAt, id])
+  @@index([threadId, deletedAt, createdAt, id])
+}
+
+model ForumPostReport {
+  id         String    @id @default(cuid())
+  postId     String
+  post       ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter   User      @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([postId, reporterId])
+  @@index([createdAt(sort: Desc)])
+}
+
+model ForumPostLike {
+  id        String   @id @default(cuid())
+  userId    String
+  postId    String
+  createdAt DateTime @default(now())
+
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId, createdAt(sort: Desc)])
+}
+
+model ForumPostReputationGrant {
+  id         String   @id @default(cuid())
+  fromUserId String
+  toUserId   String
+  postId     String
+  amount     Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  fromUser User      @relation("ForumRepFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUser   User      @relation("ForumRepTo", fields: [toUserId], references: [id], onDelete: Cascade)
+  post     ForumPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, postId])
+  @@index([toUserId, createdAt(sort: Desc)])
 }
 
 // ---------- Social ----------
@@ -350,17 +453,17 @@ model Tag {
   id         String      @id @default(cuid())
   name       String      @unique
   slug       String      @unique
-  bookTags   BookTag[] // ← backrefs
+  arcTags    ArcTag[] // ← backrefs
   threadTags ThreadTag[]
 }
 
-model BookTag {
-  bookId String
+model ArcTag {
+  arcId  String
   tagId  String
-  book   Book   @relation(fields: [bookId], references: [id])
+  arc    Arc      @relation(fields: [arcId], references: [id])
   tag    Tag    @relation(fields: [tagId], references: [id])
 
-  @@id([bookId, tagId])
+  @@id([arcId, tagId])
 }
 
 model ThreadTag {
@@ -392,15 +495,15 @@ model Follow {
   // targets
   userId String?
   user   User?   @relation("UserFollowers", fields: [userId], references: [id])
-  bookId String?
-  book   Book?   @relation(fields: [bookId], references: [id])
+  arcId String?
+  arc   Arc?    @relation(fields: [arcId], references: [id])
 
   threadId String?
   thread   ForumThread? @relation("FollowThread", fields: [threadId], references: [id])
 
   createdAt DateTime @default(now())
 
-  @@unique([followerId, userId, bookId, threadId])
+  @@unique([followerId, userId, arcId, threadId])
 }
 
 // ---------- Collaboration ----------
@@ -408,29 +511,29 @@ model Collaborator {
   id        String     @id @default(cuid())
   user      User       @relation(fields: [userId], references: [id])
   userId    String
-  book      Book?      @relation(fields: [bookId], references: [id])
-  bookId    String?
+  arc       Arc?       @relation(fields: [arcId], references: [id])
+  arcId     String?
   page      Page?      @relation(fields: [pageId], references: [id])
   pageId    String?
   role      CollabRole
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
-  @@unique([userId, bookId, pageId])
+  @@unique([userId, arcId, pageId])
 }
 
 model TurnQueue {
   id         String  @id @default(cuid())
-  bookId     String
-  book       Book    @relation(fields: [bookId], references: [id])
+  arcId      String
+  arc        Arc     @relation(fields: [arcId], references: [id])
   userId     String
   user       User    @relation(fields: [userId], references: [id])
   order      Int
   timeoutSec Int     @default(172800) // 48h
   active     Boolean @default(true)
 
-  @@unique([bookId, userId])
-  @@unique([bookId, order])
+  @@unique([arcId, userId])
+  @@unique([arcId, order])
 }
 
 model EditAudit {
@@ -578,17 +681,17 @@ model OutboxEvent {
 
 
 
-model BookFollow {
+model ArcFollow {
   id        String   @id @default(cuid())
   userId    String
-  bookId    String
+  arcId     String
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
-  book Book @relation(fields: [bookId], references: [id])
+  arc  Arc  @relation(fields: [arcId], references: [id])
 
-  @@unique([userId, bookId])
-  @@index([bookId, createdAt])
+  @@unique([userId, arcId])
+  @@index([arcId, createdAt])
 }
 
 // ---------- Economy / Shop / Reputation (MVP) ----------
@@ -609,6 +712,27 @@ model Wallet {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model WalletLedger {
+  id                     String   @id @default(cuid())
+  userId                 String
+  actorUserId            String?
+  kind                   String
+  eurodollarsDelta       Int      @default(0)
+  reputationDelta        Int      @default(0)
+  balanceEurodollars     Int?
+  balanceReputationTotal Int?
+  targetType             String?
+  targetId               String?
+  note                   String?
+  createdAt              DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([kind, createdAt(sort: Desc)])
 }
 
 model ShopItem {
@@ -668,4 +792,64 @@ model ChapterPostReputationGrant {
   // нельзя дать репутацию одному и тому же посту больше 1 раза
   @@unique([fromUserId, postId])
   @@index([toUserId, createdAt(sort: Desc)])
+}
+
+model ArcMetrics {
+  arcId                 String   @id
+  arc                   Arc      @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  participantsCount     Int      @default(0)
+  chaptersCount         Int      @default(0)
+  postsTotal            Int      @default(0)
+  posts7d               Int      @default(0)
+  posts30d              Int      @default(0)
+  likes7d               Int      @default(0)
+  likes30d              Int      @default(0)
+  rep7d                 Int      @default(0)
+  rep30d                Int      @default(0)
+  followersCount        Int      @default(0)
+  views7d               Int      @default(0)
+  views30d              Int      @default(0)
+  lastChapterPublishedAt DateTime?
+  lastPostAt            DateTime?
+  lastActivityAt        DateTime?
+  heatScore             Int      @default(0)
+  updatedAt             DateTime @updatedAt
+
+  @@index([lastActivityAt(sort: Desc)])
+  @@index([heatScore(sort: Desc)])
+}
+
+model ArcSearchDocument {
+  arcId              String   @id
+  arc                Arc      @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  titleText          String   @default("")
+  taglineText        String   @default("")
+  hookText           String   @default("")
+  summaryText        String   @default("")
+  participantsText   String   @default("")
+  tagsText           String   @default("")
+  chapterTitlesText  String   @default("")
+  postFragmentsText  String   @default("")
+  combinedText       String   @default("")
+  updatedAt          DateTime @updatedAt
+}
+
+model ArcReadState {
+  userId                String
+  arcId                 String
+  lastVisitedAt         DateTime @default(now())
+  lastChapterId         String?
+  lastPostId            String?
+  lastReadPostCreatedAt DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  arc        Arc          @relation(fields: [arcId], references: [id], onDelete: Cascade)
+  lastChapter Chapter?    @relation("ArcReadStateLastChapter", fields: [lastChapterId], references: [id], onDelete: SetNull)
+  lastPost   ChapterPost? @relation("ArcReadStateLastPost", fields: [lastPostId], references: [id], onDelete: SetNull)
+
+  @@id([userId, arcId])
+  @@index([userId, lastVisitedAt(sort: Desc)])
+  @@index([arcId, lastVisitedAt(sort: Desc)])
 }

@@ -1,28 +1,26 @@
 export const runtime = "nodejs";
 
-import { NextResponse, type NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { prisma } from "@/server/db";
-import { Prisma } from "@prisma/client";
+import { type NextRequest } from "next/server";
 import { z } from "zod";
+import { getRouteErrorResponse, requireApiUserId } from "@/server/api";
+import { error, json } from "@/server/http";
+import {
+  getCharacterApplicationForUser,
+  updateCharacterApplicationForUser,
+} from "@/server/services/characterApplications";
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(_req: NextRequest, { params }: Ctx) {
   const { id } = await params;
+  const me = await requireApiUserId();
 
-  const session = await getServerSession(authOptions);
-  const me = (session as any)?.user?.id ?? (session as any)?.userId;
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const row = await prisma.characterApplication.findFirst({
-    where: { id, userId: me },
-    select: { id: true, name: true, form: true, status: true, updatedAt: true, moderatorNote: true },
-  });
-  if (!row) return NextResponse.json({ error: "not_found" }, { status: 404 });
-
-  return NextResponse.json({ item: row });
+  try {
+    const row = await getCharacterApplicationForUser({ userId: me, id });
+    return json({ item: row });
+  } catch (routeError) {
+    return getRouteErrorResponse(routeError, "internal_error");
+  }
 }
 
 const PatchSchema = z.object({
@@ -32,43 +30,21 @@ const PatchSchema = z.object({
 
 export async function PATCH(req: NextRequest, { params }: Ctx) {
   const { id } = await params;
-
-  const session = await getServerSession(authOptions);
-  const me = (session as any)?.user?.id ?? (session as any)?.userId;
-  if (!me) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const me = await requireApiUserId();
 
   const parsed = PatchSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  if (!parsed.success) return error("bad_request", 400);
 
-  const cur = await prisma.characterApplication.findFirst({
-    where: { id, userId: me },
-    select: { id: true, status: true },
-  });
-  if (!cur) return NextResponse.json({ error: "not_found" }, { status: 404 });
+  try {
+    const updated = await updateCharacterApplicationForUser({
+      userId: me,
+      id,
+      name: parsed.data.name,
+      form: parsed.data.form,
+    });
 
-  // редактировать можно только DRAFT / NEEDS_CHANGES
-  if (cur.status !== "DRAFT" && cur.status !== "NEEDS_CHANGES") {
-    return NextResponse.json({ error: "locked_status" }, { status: 409 });
+    return json({ ok: true, item: updated });
+  } catch (routeError) {
+    return getRouteErrorResponse(routeError, "internal_error");
   }
-
-const res = await prisma.characterApplication.updateMany({
-  where: { id: cur.id, userId: me, status: { in: ["DRAFT", "NEEDS_CHANGES"] } },
-data: {
-  ...(parsed.data.name !== undefined ? { name: parsed.data.name.trim() } : {}),
-  ...(parsed.data.form !== undefined
-    ? { form: parsed.data.form as Prisma.InputJsonValue }
-    : {}),
-},
-});
-
-if (res.count === 0) {
-  return NextResponse.json({ error: "locked_status" }, { status: 409 });
-}
-
-const updated = await prisma.characterApplication.findFirst({
-  where: { id: cur.id, userId: me },
-  select: { id: true, name: true, status: true, updatedAt: true },
-});
-
-return NextResponse.json({ ok: true, item: updated });
 }

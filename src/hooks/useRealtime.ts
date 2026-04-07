@@ -10,17 +10,18 @@ type UseRealtimeOptions = {
   withCredentials?: boolean;
   url?: string;
   onOpen?: () => void;
-  onError?: (e: any) => void;
+  onError?: (e: unknown) => void;
 };
 
-type RealtimeHandler = (payload: any) => void;
+type RealtimePayload = unknown;
+type RealtimeHandler = (payload: RealtimePayload) => void;
 
 /**
  * Простая обёртка над useEventStream для подписки на именованные события SSE.
  *
  * Примеры:
  *   useRealtime("chapter:new_post", (p) => {...})
- *   useRealtime(["book:created", "book:updated"], (p) => {...})
+ *   useRealtime(["arc:created", "arc:updated"], (p) => {...})
  */
 export function useRealtime(
   eventNames: string[] | string,

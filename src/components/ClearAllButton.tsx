@@ -2,27 +2,20 @@
 "use client";
 
 import { useState } from "react";
-import { notifyUnread } from "@/lib/notifyUnread";
+import { useRouter } from "next/navigation";
+import { clearAllNotifications } from "@/lib/notificationActions";
 
 export function ClearAllButton() {
   const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
   const clearAll = async () => {
     if (loading) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ op: "clear-all" }),
-      });
-      if (res.ok) {
-        // бейдж в хедере → 0
-        notifyUnread({ op: "set", count: 0 });
-        // чтобы скрылись индивидуальные кнопки на странице
-        window.dispatchEvent(new CustomEvent("notifications:read_all"));
-        // и просто перерисуем список (станет пустым)
-        window.location.reload();
+      const result = await clearAllNotifications();
+      if (result.ok) {
+        router.refresh();
       }
     } finally {
       setLoading(false);

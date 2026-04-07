@@ -1,17 +1,10 @@
 "use client";
 
 import useSWR from "swr";
-
-type UnreadResp = { count: number };
-
-const fetcher = (url: string) =>
-  fetch(url, {
-    cache: "no-store",
-    credentials: "include",
-  }).then((r) => {
-    if (!r.ok) throw new Error("failed");
-    return r.json();
-  });
+import {
+  fetchNotificationsCount,
+  notificationsCountPath,
+} from "@/lib/notificationsClient";
 
 function isVisible() {
   if (typeof document === "undefined") return true;
@@ -19,10 +12,10 @@ function isVisible() {
 }
 
 export function useUnreadNotifications() {
-  const { data, mutate, isLoading, error } = useSWR<UnreadResp>(
-    // ВАЖНО: используем лёгкий endpoint, а не общий /api/notifications?unread=1
-    "/api/notifications/unread-count",
-    fetcher,
+  const { data, mutate, isLoading, error } = useSWR<{ count: number }>(
+    // лёгкий count endpoint без загрузки всей ленты
+    notificationsCountPath,
+    fetchNotificationsCount,
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,

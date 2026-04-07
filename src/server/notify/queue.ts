@@ -1,6 +1,7 @@
 // src/server/notify/queue.ts
 import { prisma } from "@/server/db";
 import type { Prisma } from "@prisma/client";
+import { randomOpaqueToken } from "@/server/random";
 
 import type { NotificationEvent } from "./types";
 import { emitNotifyUser } from "./emit";
@@ -38,7 +39,7 @@ export async function queueEvent(evt: NotificationEvent) {
 export async function drainOutbox(opts: { limit?: number } = {}) {
   const limit = opts.limit ?? 100;
 
-  const workerId = `drain:${process.pid}:${Math.random().toString(16).slice(2)}`;
+  const workerId = `drain:${process.pid}:${randomOpaqueToken(12)}`;
   const now = new Date();
 
   // 1) Берём кандидатов (ids)

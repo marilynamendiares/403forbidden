@@ -4,24 +4,28 @@ import { queueEvent } from "@/server/notify/queue";            // <-- ИСПОЛ
 import type { NotificationEvent } from "@/server/notify/types"; // <-- твои типы
 
 type PublishPayload = {
-  bookId: string;
+  arcId: string;
   chapterId: string;
   authorId: string;      // кто публикует
   chapterIndex?: number;
   chapterTitle?: string;
+  arcSlug?: string;
+  arcTitle?: string;
 };
 
 export async function onChapterPublished(p: PublishPayload) {
-  const recipients = await recipientsForChapterPublished(p.bookId, p.authorId);
+  const recipients = await recipientsForChapterPublished(p.arcId, p.authorId);
   if (recipients.length === 0) return;
 
   const evt: NotificationEvent = {
     kind: "chapter.published",
     actorId: p.authorId,
-    target: { type: "chapter", id: p.chapterId },   // TargetType у тебя: "chapter" | "book" | ...
+    target: { type: "chapter", id: p.chapterId },
     recipients,
     payload: {
-      bookId: p.bookId,
+      arcId: p.arcId,
+      arcSlug: p.arcSlug ?? null,
+      arcTitle: p.arcTitle ?? null,
       chapterIndex: p.chapterIndex ?? null,
       chapterTitle: p.chapterTitle ?? null,
     },

@@ -1,9 +1,16 @@
 // src/components/world/WorldHero.tsx
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Globe from "@/components/Globe";
 import BackCornerButton from "@/components/BackCornerButton";
+import {
+  type CSSVarStyle,
+  interWordJustify,
+  mixedTextOrientation,
+  verticalWritingMode,
+} from "@/lib/uiStyles";
 
 const BRACKET_ROWS = [
   "52.0° N",
@@ -16,8 +23,6 @@ const BRACKET_ROWS = [
 
 // Artboard
 const BASE_W = 1600;
-const BASE_H = 200;
-
 const TILE_H = 240;            // то, что было BASE_H
 const DISCLAIMER_H = 72;       // место под “THIS FILE…”
 const TOTAL_H = TILE_H + DISCLAIMER_H;
@@ -46,6 +51,88 @@ const LEFT_FRAME_W = 8; // толщина светлой рамки (в артб
 const G = 18; // можно потом поиграться: 16 / 18 / 20
 const EJECT_W = 110;
 
+function RailIcons({
+  icons,
+  padProp,
+}: {
+  icons: Array<{ src: string; opacityClass: string }>;
+  padProp: "paddingTop" | "paddingBottom";
+}) {
+  return (
+    <div
+      className="flex flex-col items-center opacity-100"
+      style={{ [padProp]: RAIL_PAD, gap: BTN_GAP }}
+    >
+      {icons.map((icon) => (
+        <img
+          key={`${padProp}:${icon.src}`}
+          src={icon.src}
+          alt=""
+          draggable={false}
+          className={`block ${icon.opacityClass}`}
+          style={{ width: BTN_SIZE, height: BTN_SIZE }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SideRail({
+  side,
+  label,
+  labelEdgeNudge,
+  buttonsAt,
+  icons,
+}: {
+  side: "left" | "right";
+  label: string;
+  labelEdgeNudge: number;
+  buttonsAt: "top" | "bottom";
+  icons: Array<{ src: string; opacityClass: string }>;
+}) {
+  const isLeft = side === "left";
+  const labelBlock = (
+    <div
+      className="opacity-80"
+      style={{
+        [buttonsAt === "top" ? "paddingBottom" : "paddingTop"]: RAIL_PAD,
+        transform: `translateX(${labelEdgeNudge}px)`,
+      }}
+    >
+      <div
+        className="font-osiris whitespace-nowrap select-none"
+        style={{
+          fontSize: RAIL_FONT,
+          lineHeight: `${RAIL_FONT}px`,
+          letterSpacing: "0.02em",
+          writingMode: verticalWritingMode,
+          textOrientation: mixedTextOrientation,
+          ...(isLeft ? { transform: "rotate(180deg)" } : {}),
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+
+  const buttonsBlock = (
+    <RailIcons
+      icons={icons}
+      padProp={buttonsAt === "top" ? "paddingTop" : "paddingBottom"}
+    />
+  );
+
+  return (
+    <div
+      className={`absolute top-0 h-full flex flex-col items-center ${isLeft ? "left-0" : "right-0"}`}
+      style={{ width: RAIL_W }}
+    >
+      {buttonsAt === "top" ? buttonsBlock : labelBlock}
+      <div className="flex-1" />
+      {buttonsAt === "top" ? labelBlock : buttonsBlock}
+    </div>
+  );
+}
 
 function BracketRow({ text, dim = false }: { text: string; dim?: boolean }) {
   const [hot, setHot] = useState(false);
@@ -210,57 +297,16 @@ export default function WorldHero() {
             <div className="absolute left-0 top-0 h-full" style={{ width: LEFT_W }}>
               <div className="relative h-full">
                 {/* LEFT RAIL: buttons TOP, label BOTTOM */}
-                <div
-                  className="absolute left-0 top-0 h-full flex flex-col items-center"
-                  style={{ width: RAIL_W }}
-                >
-{/* buttons TOP */}
-<div
-  className="flex flex-col items-center opacity-100"
-  style={{ paddingTop: RAIL_PAD, gap: BTN_GAP }}
->
-  <img
-    src="/icon2.svg"
-    alt=""
-    draggable={false}
-    className="block opacity-100"
-    style={{ width: BTN_SIZE, height: BTN_SIZE }}
-  />
-  <img
-    src="/icon1.svg"
-    alt=""
-    draggable={false}
-    className="block opacity-80"
-    style={{ width: BTN_SIZE, height: BTN_SIZE }}
-  />
-</div>
-
-
-                  <div className="flex-1" />
-
-                  {/* label BOTTOM */}
-                  <div
-                    className="opacity-80"
-                    style={{
-                      paddingBottom: RAIL_PAD,
-                      transform: `translateX(${LABEL_EDGE_NUDGE_L}px)`,
-                    }}
-                  >
-                    <div
-                      className="font-osiris whitespace-nowrap select-none"
-                      style={{
-                        fontSize: RAIL_FONT,
-                        lineHeight: `${RAIL_FONT}px`,
-                        letterSpacing: "0.02em",
-                        writingMode: "vertical-rl" as any,
-                        textOrientation: "mixed" as any,
-                        transform: "rotate(180deg)", // чтобы читалось снизу вверх
-                      }}
-                    >
-                      {SIDE_LABEL}
-                    </div>
-                  </div>
-                </div>
+                <SideRail
+                  side="left"
+                  label={SIDE_LABEL}
+                  labelEdgeNudge={LABEL_EDGE_NUDGE_L}
+                  buttonsAt="top"
+                  icons={[
+                    { src: "/icon2.svg", opacityClass: "opacity-100" },
+                    { src: "/icon1.svg", opacityClass: "opacity-80" },
+                  ]}
+                />
 
                 {/* LEFT PANEL */}
                 <div className="absolute top-0 h-full" style={{ left: RAIL_W, width: PANEL_W }}>
@@ -351,11 +397,11 @@ export default function WorldHero() {
       // cut = сколько отрезаем сверху
       // shift = насколько опускаем слой вниз
       // (эти проценты легко тюнить, не ломая верстку)
-      ["--o1-cut" as any]: "35%",
-      ["--o1-shift" as any]: "90%",
-      ["--o2-cut" as any]: "70%",
-      ["--o2-shift" as any]: "143%",
-    }}
+      "--o1-cut": "35%",
+      "--o1-shift": "90%",
+      "--o2-cut": "70%",
+      "--o2-shift": "143%",
+    } as CSSVarStyle}
   >
     <div className="relative w-full">
       {/* WHITE FILL (верхний) */}
@@ -432,56 +478,16 @@ export default function WorldHero() {
             <div className="absolute right-0 top-0 h-full" style={{ width: RIGHT_W }}>
               <div className="relative h-full">
                 {/* RIGHT RAIL: label TOP, buttons BOTTOM */}
-                <div
-                  className="absolute right-0 top-0 h-full flex flex-col items-center"
-                  style={{ width: RAIL_W }}
-                >
-                  {/* label TOP */}
-                  <div
-                    className="opacity-80"
-                    style={{
-                      paddingTop: RAIL_PAD,
-                      transform: `translateX(${LABEL_EDGE_NUDGE_R}px)`,
-                    }}
-                  >
-                    <div
-                      className="font-osiris whitespace-nowrap select-none"
-                      style={{
-                        fontSize: RAIL_FONT,
-                        lineHeight: `${RAIL_FONT}px`,
-                        letterSpacing: "0.02em",
-                        writingMode: "vertical-rl" as any,
-                        textOrientation: "mixed" as any,
-                      }}
-                    >
-                      {SIDE_LABEL}
-                    </div>
-                  </div>
-
-                  <div className="flex-1" />
-
-{/* buttons BOTTOM */}
-<div
-  className="flex flex-col items-center opacity-100"
-  style={{ paddingBottom: RAIL_PAD, gap: BTN_GAP }}
->
-  <img
-    src="/icon1.svg"
-    alt=""
-    draggable={false}
-    className="block opacity-80"
-    style={{ width: BTN_SIZE, height: BTN_SIZE }}
-  />
-  <img
-    src="/icon2.svg"
-    alt=""
-    draggable={false}
-    className="block opacity-100"
-    style={{ width: BTN_SIZE, height: BTN_SIZE }}
-  />
-</div>
-
-                </div>
+                <SideRail
+                  side="right"
+                  label={SIDE_LABEL}
+                  labelEdgeNudge={LABEL_EDGE_NUDGE_R}
+                  buttonsAt="bottom"
+                  icons={[
+                    { src: "/icon1.svg", opacityClass: "opacity-80" },
+                    { src: "/icon2.svg", opacityClass: "opacity-100" },
+                  ]}
+                />
 
 {/* RIGHT PANEL */}
 <div className="absolute top-0 h-full" style={{ right: RAIL_W, width: PANEL_W }}>
@@ -557,7 +563,7 @@ export default function WorldHero() {
     className="font-archimoto uppercase text-[12px] leading-[1.55] tracking-[0.02em] opacity-40 text-[#D9D9D9]"
     style={{
       textAlign: "justify",
-      textJustify: "inter-word" as any,
+      textJustify: interWordJustify,
     }}
   >
     THIS FILE CONTAINS A CURATED REPRESENTATION OF THE PUBLICLY AVAILABLE STRUCTURE OF THE CITY.

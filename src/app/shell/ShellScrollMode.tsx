@@ -1,6 +1,10 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from "react";
+import React, { createContext, useContext } from "react";
+import {
+  useStackedConfigRegistration,
+  useStackedConfigValue,
+} from "@/app/shell/stackedConfig";
 
 export type ShellScrollMode = "page" | "split";
 
@@ -11,26 +15,13 @@ const Ctx = createContext<{
 } | null>(null);
 
 export function ShellScrollModeProvider({ children }: { children: React.ReactNode }) {
-  const [entries, setEntries] = useState<Array<{ id: string; mode: ShellScrollMode }>>([]);
-
-  const registerMode = useCallback((id: string, mode: ShellScrollMode) => {
-    setEntries((prev) => {
-      const next = prev.filter((entry) => entry.id !== id);
-      next.push({ id, mode });
-      return next;
-    });
-  }, []);
-
-  const unregisterMode = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((entry) => entry.id !== id));
-  }, []);
-
-  const mode = entries.length > 0 ? entries[entries.length - 1]!.mode : "page";
-
-  const value = useMemo(
-    () => ({ mode, registerMode, unregisterMode }),
-    [mode, registerMode, unregisterMode]
-  );
+  const { value: mode, registerValue, unregisterValue } =
+    useStackedConfigValue<ShellScrollMode>("page");
+  const value = {
+    mode,
+    registerMode: registerValue,
+    unregisterMode: unregisterValue,
+  };
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
@@ -43,12 +34,7 @@ export function useShellScrollMode() {
 
 export default function ShellScrollModeSetter({ mode }: { mode: ShellScrollMode }) {
   const { registerMode, unregisterMode } = useShellScrollMode();
-  const id = useId();
-
-  useEffect(() => {
-    registerMode(id, mode);
-    return () => unregisterMode(id);
-  }, [id, mode, registerMode, unregisterMode]);
+  useStackedConfigRegistration(registerMode, unregisterMode, mode);
 
   return null;
 }

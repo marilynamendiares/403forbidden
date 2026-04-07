@@ -1,13 +1,11 @@
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import { CreateThread } from "@/server/schemas";
-import { getThreadsByCategory, createThread, getCategoryPolicyBySlug } from "@/server/repos/forum";
-import { requirePlayer } from "@/server/player";
-import { requireAdmin } from "@/server/admin";
-import { isAdminOnlyCategory } from "@/server/forumAcl";
-
+import { getThreadsByCategory } from "@/server/repos/forum";
+import { isAdminSession } from "@/server/admin";
+import { createThreadForUser } from "@/server/services/forum";
+import { getSessionViewer } from "@/server/session";
+import { getRouteErrorResponse } from "@/server/api";
+import { error, json } from "@/server/http";
 
 type Ctx = { params: Promise<{ category: string }> };
 
@@ -23,71 +21,42 @@ export async function GET(req: NextRequest, { params }: Ctx) {
     cursorId: cursor,
   });
 
-  // нормализуем даты в строки (если в repo не конвертировали)
-  const json = {
-    items: items.map((t) => ({
-      ...t,
-      createdAt: typeof t.createdAt === "string" ? t.createdAt : t.createdAt.toISOString(),
-      updatedAt: typeof t.updatedAt === "string" ? t.updatedAt : t.updatedAt.toISOString(),
+  return json({
+    items: items.map((thread) => ({
+      ...thread,
+      createdAt:
+        typeof thread.createdAt === "string"
+          ? thread.createdAt
+          : thread.createdAt.toISOString(),
+      updatedAt:
+        typeof thread.updatedAt === "string"
+          ? thread.updatedAt
+          : thread.updatedAt.toISOString(),
     })),
     nextCursor,
-  };
-
-  return NextResponse.json(json);
+  });
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
   const { category } = await params;
+  const { session, userId } = await getSessionViewer();
+  if (!userId || !session) return error("unauthorized", 401);
 
-  const session = await getServerSession(authOptions);
-  const userId =
-    ((session as any)?.user?.id as string | undefined) ??
-    ((session as any)?.userId as string | undefined);
+  const body = await req.json().catch(() => null);
+  const parsed = CreateThread.safeParse(body);
+  if (!parsed.success) return error("bad_request", 400);
 
-  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-// ✅ Thread creation policy (DB-driven, with slug-based fallback)
-const pol = await getCategoryPolicyBySlug(category).catch(() => null);
-
-const vis = (pol?.createThreadVisibility ?? null) as
-  | "PUBLIC"
-  | "MEMBERS"
-  | "PLAYERS"
-  | "ADMIN"
-  | null;
-
-// Fallback for older DB (before migration) or missing record:
-const effectiveVis =
-  vis ?? (isAdminOnlyCategory(category) ? "ADMIN" : "PLAYERS");
-
-if (effectiveVis === "ADMIN") {
   try {
-    requireAdmin(session as any);
-  } catch {
-    return NextResponse.json({ error: "admin_required" }, { status: 403 });
+    const thread = await createThreadForUser({
+      category,
+      userId,
+      isAdmin: Boolean(isAdminSession(session)),
+      title: parsed.data.title,
+      content: parsed.data.content ?? null,
+    });
+
+    return json(thread, { status: 201 });
+  } catch (routeError) {
+    return getRouteErrorResponse(routeError);
   }
-} else if (effectiveVis === "PLAYERS") {
-  try {
-    await requirePlayer(userId);
-  } catch {
-    return NextResponse.json({ error: "player_required" }, { status: 403 });
-  }
-}
-// MEMBERS/PUBLIC -> login is enough (already checked by userId)
-
-
-
-const body = await req.json().catch(() => null);
-const parsed = CreateThread.safeParse(body);
-if (!parsed.success) return NextResponse.json({ error: "bad_request" }, { status: 400 });
-
-const thread = await createThread({
-  categorySlug: category,
-  authorId: userId,
-  title: parsed.data.title,
-  // content может отсутствовать или быть пустым — repo сам решит, создавать пост или нет
-  content: (parsed.data as any).content ?? null,
-});
-
-return NextResponse.json(thread, { status: 201 });
 }

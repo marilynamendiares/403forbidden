@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { type CSSVarStyle } from "@/lib/uiStyles";
 
 type Props = { bgUrl: string };
 
@@ -14,6 +15,19 @@ const GAP = 26;
 const EXTRA = 380;
 const EDGE_BUFFER = 50;
 const PARALLAX_AMPLITUDE = EXTRA / 2 - EDGE_BUFFER;
+
+type PinnedTileProps = {
+  href: string;
+  title: string;
+  subtitle: string;
+  compact?: boolean;
+  bgUrl: string;
+  top: number;
+  height: number;
+  canvasTop: number;
+  canvasHeight: number;
+  shade: string;
+};
 
 export default function ForumPinnedTiles({ bgUrl }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -59,57 +73,25 @@ export default function ForumPinnedTiles({ bgUrl }: Props) {
     <section
       ref={rootRef}
       className="relative w-full"
-      style={
-        {
-          height: totalH,
-          ["--py" as any]: "0",
-          // Двигаем полотно на весь доступный запас, чтобы курсор
-          // мог довести изображение до верхнего и нижнего краёв.
-          ["--amp" as any]: `-${PARALLAX_AMPLITUDE}px`,
-        } as React.CSSProperties
-      }
+      style={{
+        height: totalH,
+        "--py": "0",
+        // Двигаем полотно на весь доступный запас, чтобы курсор
+        // мог довести изображение до верхнего и нижнего краёв.
+        "--amp": `-${PARALLAX_AMPLITUDE}px`,
+      } as CSSVarStyle}
     >
-      {/* TOP TILE */}
-      <Link
+      <PinnedTile
         href="/forum/news/public"
-        className="group absolute inset-x-0 top-0 overflow-hidden"
-        style={{ height: H_TOP }}
-      >
-        {/* unified background canvas */}
-        <div
-          aria-hidden="true"
-          className="absolute left-0 w-full"
-          style={{
-            top: canvasTop - 0,
-            height: canvasH,
-            backgroundImage: `url(${bgUrl})`,
-            backgroundRepeat: "no-repeat",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            transform: "translateY(calc(var(--py) * var(--amp)))",
-            willChange: "transform",
-          }}
-        />
-
-        {/* subtle cinematic shading (not glass) */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.18))",
-          }}
-        />
-
-        {/* ✅ hover inner border */}
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-          style={{ boxShadow: "inset 0 0 0 1px #D9D9D9" }}
-        />
-
-        <TileText title="ANNOUNCEMENTS" subtitle="OFFICIAL UPDATES" />
-      </Link>
+        title="ANNOUNCEMENTS"
+        subtitle="OFFICIAL UPDATES"
+        bgUrl={bgUrl}
+        top={0}
+        height={H_TOP}
+        canvasTop={canvasTop}
+        canvasHeight={canvasH}
+        shade="linear-gradient(180deg, rgba(0,0,0,0.10), rgba(0,0,0,0.18))"
+      />
 
       {/* GAP = абсолютная пустота */}
       <div
@@ -118,45 +100,69 @@ export default function ForumPinnedTiles({ bgUrl }: Props) {
         style={{ top: H_TOP, height: GAP }}
       />
 
-      {/* BOTTOM TILE */}
-      <Link
+      <PinnedTile
         href="/forum/news/devlog"
-        className="group absolute inset-x-0 overflow-hidden"
-        style={{ top: bottomOffset, height: H_BOTTOM }}
-      >
-        <div
-          aria-hidden="true"
-          className="absolute left-0 w-full"
-          style={{
-            top: canvasTop - bottomOffset,
-            height: canvasH,
-            backgroundImage: `url(${bgUrl})`,
-            backgroundRepeat: "no-repeat",
-            backgroundSize: "cover",
-            backgroundPosition: "center",
-            transform: "translateY(calc(var(--py) * var(--amp)))",
-            willChange: "transform",
-          }}
-        />
-
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.22))",
-          }}
-        />
-
-        <div
-          aria-hidden="true"
-          className="absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-200 group-hover:opacity-100"
-          style={{ boxShadow: "inset 0 0 0 1px #D9D9D9" }}
-        />
-
-        <TileText title="CHANGELOG" subtitle="PLATFORM UPDATES" compact />
-      </Link>
+        title="CHANGELOG"
+        subtitle="PLATFORM UPDATES"
+        compact
+        bgUrl={bgUrl}
+        top={bottomOffset}
+        height={H_BOTTOM}
+        canvasTop={canvasTop}
+        canvasHeight={canvasH}
+        shade="linear-gradient(180deg, rgba(0,0,0,0.12), rgba(0,0,0,0.22))"
+      />
     </section>
+  );
+}
+
+function PinnedTile({
+  href,
+  title,
+  subtitle,
+  compact,
+  bgUrl,
+  top,
+  height,
+  canvasTop,
+  canvasHeight,
+  shade,
+}: PinnedTileProps) {
+  return (
+    <Link
+      href={href}
+      className="group absolute inset-x-0 overflow-hidden"
+      style={{ top, height }}
+    >
+      <div
+        aria-hidden="true"
+        className="absolute left-0 w-full"
+        style={{
+          top: canvasTop - top,
+          height: canvasHeight,
+          backgroundImage: `url(${bgUrl})`,
+          backgroundRepeat: "no-repeat",
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+          transform: "translateY(calc(var(--py) * var(--amp)))",
+          willChange: "transform",
+        }}
+      />
+
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: shade }}
+      />
+
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 pointer-events-none opacity-0 transition-opacity duration-200 group-hover:opacity-100"
+        style={{ boxShadow: "inset 0 0 0 1px #D9D9D9" }}
+      />
+
+      <TileText title={title} subtitle={subtitle} compact={compact} />
+    </Link>
   );
 }
 

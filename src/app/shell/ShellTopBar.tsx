@@ -1,43 +1,24 @@
 // src/app/shell/ShellTopBar.tsx
 "use client";
 
-import { useEffect, useState } from "react";
 import TopNavClient from "@/app/TopNavClient";
 import HeaderClient from "@/app/HeaderClient";
 import { useShellUI } from "@/app/shell/ShellUIContext";
+import { SHELL_TOPBAR_HEIGHT } from "@/app/shell/shellMetrics";
+import { useMyProfile } from "@/hooks/useMyProfile";
 
 export default function ShellTopBar({ sseEventName }: { sseEventName?: string }) {
   const { toggleSidebar } = useShellUI();
-  const [eurodollars, setEurodollars] = useState<number | null>(null);
-
-  useEffect(() => {
-    let abort = false;
-
-    (async () => {
-      try {
-        const r = await fetch("/api/profile", { cache: "no-store" });
-        if (!r.ok) return;
-        const p = await r.json();
-        const value = typeof p?.eurodollars === "number" ? p.eurodollars : 0;
-        if (!abort) setEurodollars(value);
-      } catch {
-        // ignore
-      }
-    })();
-
-    return () => {
-      abort = true;
-    };
-  }, []);
+  const { profile } = useMyProfile();
+  const eurodollars = profile?.eurodollars ?? null;
 
   return (
-    <div className="w-full" style={{ height: 72, background: "transparent" }}>
-      <div className="grid h-full grid-cols-[72px_72px_1fr_auto_72px] items-stretch">
-        {/* LEFT 72: burger */}
-        <div
-          className="group flex items-center justify-center"
-          style={{ background: "transparent" }}
-        >
+    <div className="w-full bg-transparent" style={{ height: `${SHELL_TOPBAR_HEIGHT}px` }}>
+      <div
+        className="grid h-full items-stretch"
+        style={{ gridTemplateColumns: `${SHELL_TOPBAR_HEIGHT}px ${SHELL_TOPBAR_HEIGHT}px 1fr auto ${SHELL_TOPBAR_HEIGHT}px` }}
+      >
+        <div className="group flex items-center justify-center bg-transparent">
           <button
             type="button"
             onClick={toggleSidebar}
@@ -65,16 +46,11 @@ export default function ShellTopBar({ sseEventName }: { sseEventName?: string })
           </button>
         </div>
 
-        {/* AVATAR 72 */}
-        <div className="h-18 w-18" style={{ background: "transparent" }}>
+        <div className="bg-transparent" style={{ height: `${SHELL_TOPBAR_HEIGHT}px`, width: `${SHELL_TOPBAR_HEIGHT}px` }}>
           <HeaderClient sseEventName={sseEventName} variant="topbar" />
         </div>
 
-        {/* BALANCE AREA */}
-        <div
-          className="h-full w-full flex items-start"
-          style={{ background: "transparent", paddingTop: "12px" }}
-        >
+        <div className="flex h-full w-full items-start bg-transparent pt-3">
           {eurodollars !== null ? (
             <div
               className="header-font-archimoto inline-flex items-center gap-4 text-[15px] leading-none select-none"
@@ -88,13 +64,11 @@ export default function ShellTopBar({ sseEventName }: { sseEventName?: string })
           ) : null}
         </div>
 
-        {/* TABS AREA */}
-        <div className="h-full" style={{ background: "transparent" }}>
+        <div className="h-full bg-transparent">
           <TopNavClient />
         </div>
 
-        {/* RIGHT 72 */}
-        <div className="h-full w-full" style={{ background: "transparent" }} />
+        <div className="h-full w-full bg-transparent" />
       </div>
     </div>
   );

@@ -1,24 +1,23 @@
 // src/app/u/[username]/inventory/page.tsx
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { prisma } from "@/server/db";
+import Link from "next/link";
+import {
+  getPublicInventoryPageByUsername,
+  getPublicProfileSeoByUsername,
+  PublicProfileHttpError,
+} from "@/server/services/publicProfiles";
 
 type Params = { params: Promise<{ username: string }> };
 
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { username } = await params;
 
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: {
-      username: true,
-      profile: { select: { displayName: true } },
-    },
-  });
+  const user = await getPublicProfileSeoByUsername(username);
 
   if (!user) return { title: "Inventory not found" };
 
-  const name = user.profile?.displayName ?? user.username;
+  const name = user.displayName ?? user.username;
   return { title: `${name} — Inventory` };
 }
 
@@ -27,46 +26,14 @@ export const dynamic = "force-dynamic";
 export default async function UserInventoryPage({ params }: Params) {
   const { username } = await params;
 
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: {
-      id: true,
-      username: true,
-      profile: { select: { displayName: true } },
-    },
+  const payload = await getPublicInventoryPageByUsername(username).catch((error) => {
+    if (error instanceof PublicProfileHttpError && error.status === 404) {
+      return null;
+    }
+    throw error;
   });
 
-  if (!user) notFound();
-
-  const inventory = await prisma.inventoryItem.findMany({
-    where: { userId: user.id },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      createdAt: true,
-      item: {
-        select: {
-          id: true,
-          slug: true,
-          title: true,
-          description: true,
-          category: true,
-          priceEurodollars: true,
-          requiredReputation: true,
-        },
-      },
-    },
-  });
-
-  // группируем по категории
-  const grouped = new Map<string, typeof inventory>();
-  for (const row of inventory) {
-    const cat = row.item.category || "OTHER";
-    if (!grouped.has(cat)) grouped.set(cat, []);
-    grouped.get(cat)!.push(row);
-  }
-
-  const name = user.profile?.displayName ?? user.username;
+  if (!payload) notFound();
 
   return (
     <div className="mx-auto max-w-4xl px-4 pb-10 space-y-6">
@@ -74,28 +41,28 @@ export default async function UserInventoryPage({ params }: Params) {
         <div>
           <h1 className="text-2xl font-semibold">Inventory</h1>
           <p className="opacity-60 text-sm">
-            @{user.username} · {name}
+            @{payload.user.username} · {payload.user.displayName}
           </p>
         </div>
 
-        <a
-          href={`/u/${encodeURIComponent(user.username)}`}
+        <Link
+          href={`/u/${encodeURIComponent(payload.user.username)}`}
           className="rounded-md border px-3 py-2 text-sm hover:bg-neutral-900"
         >
           Back to profile
-        </a>
+        </Link>
       </div>
 
-      {inventory.length === 0 ? (
+      {payload.inventory.length === 0 ? (
         <div className="border border-neutral-800 rounded-xl p-6">
           <p className="opacity-70">No items yet.</p>
           <p className="mt-2 text-sm opacity-60">
-            Visit the <a className="underline" href="/world/shop">shop</a> to buy upgrades.
+            Visit the <Link className="underline" href="/world/shop">shop</Link> to buy upgrades.
           </p>
         </div>
       ) : (
         <div className="space-y-6">
-          {[...grouped.entries()].map(([cat, rows]) => (
+          {payload.grouped.map(([cat, rows]) => (
             <section
               key={cat}
               className="border border-neutral-800 rounded-xl p-4"

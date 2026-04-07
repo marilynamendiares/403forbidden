@@ -1,12 +1,16 @@
 // src/app/u/[username]/page.tsx
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { prisma } from "@/server/db";
+import Link from "next/link";
 import { ThumbsUp, Star } from "lucide-react";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import AvatarImg from "@/components/avatarImg";
 import { resolveMediaUrl } from "@/lib/media";
+import { getSessionViewer } from "@/server/session";
+import {
+  getPublicProfilePageByUsername,
+  getPublicProfileSeoByUsername,
+  PublicProfileHttpError,
+} from "@/server/services/publicProfiles";
 
 // для Next 15: params — Promise
 type Params = { params: Promise<{ username: string }> };
@@ -15,23 +19,17 @@ type Params = { params: Promise<{ username: string }> };
 export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { username } = await params;
 
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: {
-      username: true,
-      profile: { select: { displayName: true, bio: true } },
-    },
-  });
+  const user = await getPublicProfileSeoByUsername(username);
 
   if (!user) return { title: "Profile not found" };
 
-  const titleName = user.profile?.displayName ?? user.username;
+  const titleName = user.displayName ?? user.username;
   return {
     title: `${titleName} — Profile`,
-    description: user.profile?.bio ?? `Public profile of ${titleName}`,
+    description: user.bio ?? `Public profile of ${titleName}`,
     openGraph: {
       title: `${titleName} — Profile`,
-      description: user.profile?.bio ?? `@${user.username}`,
+      description: user.bio ?? `@${user.username}`,
     },
   };
 }
@@ -40,46 +38,21 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
 export default async function PublicProfilePage({ params }: Params) {
   const { username } = await params;
 
-  const [session, user] = await Promise.all([
-    getServerSession(authOptions),
-    prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        username: true,
-        profile: {
-          select: {
-            displayName: true,
-            bio: true,
-            avatarUrl: true,
-            bannerUrl: true,
-          },
-        },
-      },
+  const [{ userId: me }, profile] = await Promise.all([
+    getSessionViewer(),
+    getPublicProfilePageByUsername(username).catch((error) => {
+      if (error instanceof PublicProfileHttpError && error.status === 404) {
+        return null;
+      }
+      throw error;
     }),
   ]);
 
-  if (!user) notFound();
+  if (!profile) notFound();
 
-  const isMe = (session as any)?.userId === user.id;
-
-  // ── Economy / Social stats ───────────────────────────────────
-  const [wallet, likesReceived] = await Promise.all([
-    prisma.wallet.findUnique({
-      where: { userId: user.id },
-      select: { eurodollars: true, reputationTotal: true },
-    }),
-    prisma.chapterPostLike.count({
-      where: { post: { authorId: user.id } },
-    }),
-  ]);
-
-  const eurodollars = wallet?.eurodollars ?? 0;
-  const reputation = wallet?.reputationTotal ?? 0;
-  // ─────────────────────────────────────────────────────────────
-
-const name = user.profile?.displayName || user.username;
-const bio = user.profile?.bio || "";
+  const isMe = me === profile.user.id;
+  const name = profile.user.displayName;
+  const bio = profile.user.bio;
 
 
   return (
@@ -90,54 +63,52 @@ const bio = user.profile?.bio || "";
         {/* LEFT: AVATAR */}
         <div className="col-span-12 md:col-span-3">
           <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-<AvatarImg
-  src={user.profile?.avatarUrl ?? undefined}
-  alt={`${name} avatar`}
-  className="h-full w-full object-cover"
-/>
-
+            <AvatarImg
+              src={profile.user.avatarUrl ?? undefined}
+              alt={`${name} avatar`}
+              className="h-full w-full object-cover"
+            />
           </div>
         </div>
 
         {/* RIGHT: BANNER + NAME ROW (height follows avatar only, not stats) */}
         <div className="col-span-12 md:col-span-9">
           <div className="grid h-full grid-rows-[auto_auto] gap-2">
-<div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
-  {user.profile?.bannerUrl ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={resolveMediaUrl(user.profile.bannerUrl) ?? ""}
-      alt={`${name} banner`}
-      className="h-full w-full object-cover"
-    />
-  ) : null}
-</div>
+            <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
+              {profile.user.bannerUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={resolveMediaUrl(profile.user.bannerUrl) ?? ""}
+                  alt={`${name} banner`}
+                  className="h-full w-full object-cover"
+                />
+              ) : null}
+            </div>
 
             {/* Name row: sits under banner, independent of stats */}
             <div className="flex items-end justify-between gap-4">
               <div className="min-w-0">
                 <h1 className="text-3xl font-semibold leading-tight">{name}</h1>
                 <p className="mt-1 text-lg opacity-70 leading-none">
-                  @{user.username}
+                  @{profile.user.username}
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
-                <a
-                  href={`/u/${encodeURIComponent(user.username)}/inventory`}
+                <Link
+                  href={`/u/${encodeURIComponent(profile.user.username)}/inventory`}
                   className="rounded-lg border px-3 py-2 text-sm hover:bg-neutral-900"
                 >
                   Inventory
-                </a>
+                </Link>
 
                 {isMe && (
-                  <a
-                    href="/settings/profile"
+                  <Link
+                    href="/profile/settings"
                     className="rounded-lg border px-3 py-2 text-sm hover:bg-accent"
                   >
                     Edit profile
-                  </a>
+                  </Link>
                 )}
               </div>
             </div>
@@ -150,18 +121,18 @@ const bio = user.profile?.bio || "";
           <div className="mt-3 flex items-center gap-5 text-sm">
             <div className="inline-flex items-center gap-2 text-neutral-300">
               <ThumbsUp className="h-4 w-4 text-neutral-500" />
-              <span className="tabular-nums">{likesReceived}</span>
+              <span className="tabular-nums">{profile.stats.likesReceived}</span>
             </div>
 
             <div className="inline-flex items-center gap-2 text-neutral-300">
               <Star className="h-4 w-4 text-neutral-500" />
-              <span className="tabular-nums">{reputation}</span>
+              <span className="tabular-nums">{profile.stats.reputation}</span>
             </div>
 
             <div className="inline-flex items-center gap-2">
               <span className="font-mono text-emerald-400">€$</span>
               <span className="tabular-nums text-neutral-300">
-                {eurodollars}
+                {profile.stats.eurodollars}
               </span>
             </div>
           </div>
@@ -183,8 +154,8 @@ const bio = user.profile?.bio || "";
 
       {/* Placeholders below */}
       <section className="border border-neutral-800 rounded-xl p-4">
-        <h2 className="text-lg font-medium mb-2">Books</h2>
-        <p className="opacity-60 text-sm">No books yet. (soon)</p>
+        <h2 className="text-lg font-medium mb-2">Arcs</h2>
+        <p className="opacity-60 text-sm">No arcs yet. (soon)</p>
       </section>
 
       <section className="border border-neutral-800 rounded-xl p-4">

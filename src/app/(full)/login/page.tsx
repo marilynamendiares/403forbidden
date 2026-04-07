@@ -1,5 +1,6 @@
 "use client";
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
@@ -49,7 +50,7 @@ function LoginPageInner() {
       callbackUrl, // ← ключевой момент
     });
 
-    if ((res as any)?.error) setError("Invalid email or password");
+    if (res?.error) setError("Invalid email or password");
   }
 
   return (
@@ -92,12 +93,12 @@ function LoginPageInner() {
         {error && email && (
           <p className="text-xs opacity-70">
             If you just signed up, you may need to{" "}
-            <a
+            <Link
               className="underline hover:opacity-100"
               href={`/verify-email?email=${encodeURIComponent(email)}`}
             >
               verify your email
-            </a>
+            </Link>
             .
           </p>
         )}
@@ -107,9 +108,9 @@ function LoginPageInner() {
         </button>
 
         <p className="text-xs opacity-70 text-center">
-          <a className="underline hover:opacity-100" href="/forgot-password">
+          <Link className="underline hover:opacity-100" href="/forgot-password">
             Forgot password?
-          </a>
+          </Link>
         </p>
       </form>
     </div>

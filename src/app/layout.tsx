@@ -2,9 +2,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Montserrat } from "next/font/google";
 import "./globals.css";
-import Providers from "./providers";
-import GlobalBackground from "@/app/GlobalBackground";
-import GlobalBrand from "@/app/GlobalBrand";
+import AppChrome from "@/app/AppChrome";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
@@ -28,11 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={[geistSans.variable, geistMono.variable, montserrat.variable].join(" ")}
     >
       <body className="antialiased min-h-screen text-white relative">
-        <GlobalBackground />
-        <div className="relative z-10">
-          <GlobalBrand />
-          <Providers>{children}</Providers>
-        </div>
+        <AppChrome>{children}</AppChrome>
       </body>
     </html>
   );

@@ -10,11 +10,12 @@ import {
   PerspectiveCamera,
   WebGLRenderer,
   Group,
-  BufferGeometry,
   Vector3,
   Mesh,
   SphereGeometry,
   MeshBasicMaterial,
+  Object3D,
+  Material,
 } from "three";
 
 type Props = {
@@ -23,6 +24,11 @@ type Props = {
   tiltX?: number; // degrees
   tiltZ?: number; // degrees
   className?: string;
+};
+
+type DisposableObject3D = Object3D & {
+  geometry?: { dispose?: () => void };
+  material?: Material | Material[] | { dispose?: () => void };
 };
 
 export default function Globe({
@@ -234,9 +240,14 @@ const resize = () => {
 
       // dispose geometries/materials (to avoid leaks on HMR)
       try {
-        spinGroup?.traverse((obj: any) => {
-          if (obj.geometry) obj.geometry.dispose?.();
-          if (obj.material) obj.material.dispose?.();
+        spinGroup?.traverse((obj: Object3D) => {
+          const disposable = obj as DisposableObject3D;
+          disposable.geometry?.dispose?.();
+          if (Array.isArray(disposable.material)) {
+            disposable.material.forEach((material) => material.dispose?.());
+          } else {
+            disposable.material?.dispose?.();
+          }
         });
         renderer?.dispose();
       } catch {

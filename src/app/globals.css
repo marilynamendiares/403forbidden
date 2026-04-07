@@ -303,9 +303,9 @@ html, body {
 }
 
 /* ─────────────────────────────────────────────
-   Вариант 1: текущая кнопка троеточия (книга)
+   Shared entity actions trigger
    ───────────────────────────────────────────── */
-.book-actions-menu-trigger {
+.entity-actions-menu-trigger {
   @apply inline-flex h-8 w-8 items-center justify-center
     rounded-md border border-neutral-700
     bg-neutral-900/40 text-neutral-200

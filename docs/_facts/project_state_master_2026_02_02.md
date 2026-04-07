@@ -1,5 +1,9 @@
 # PROJECT STATE MASTER — 403FORBIDDEN
 
+> Historical implementation snapshot from 2026-02-02.
+> This file was previously used as a source of truth, but parts of it are now stale.
+> Use it for repo archaeology and implementation history, not as the current canonical product document.
+
 **Last updated:** 2026-02-02  
 **Timezone:** Europe/Riga  
 **Purpose:** Single source of truth for *current* implementation state + intentional design locks, so future changes don’t accidentally break the project.

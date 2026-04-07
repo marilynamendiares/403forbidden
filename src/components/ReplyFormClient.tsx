@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useFormStatus } from "react-dom";
+import { ReplyFormSection, ReplyTextArea } from "@/components/ReplyFormUi";
 
 function SubmitButton() {
   const { pending } = useFormStatus();
@@ -17,41 +18,56 @@ function SubmitButton() {
   );
 }
 
+function ResetOnIdle({
+  justSubmitted,
+  onReset,
+}: {
+  justSubmitted: boolean;
+  onReset: () => void;
+}) {
+  const { pending } = useFormStatus();
+
+  useEffect(() => {
+    if (justSubmitted && !pending) {
+      onReset();
+    }
+  }, [justSubmitted, onReset, pending]);
+
+  return null;
+}
+
 export default function ReplyFormClient({
   action,
+  onSubmitted,
 }: {
   // серверный экшен из RSC
   action: (formData: FormData) => Promise<void>;
+  onSubmitted?: () => void;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [justSubmitted, setJustSubmitted] = useState(false);
-  const { pending } = useFormStatus();
-
-  // Сбрасываем форму, когда отправка завершилась
-  useEffect(() => {
-    if (justSubmitted && !pending) {
-      formRef.current?.reset();
-      setJustSubmitted(false);
-    }
-  }, [pending, justSubmitted]);
 
   return (
     <form
       ref={formRef}
       action={action}
       onSubmit={() => setJustSubmitted(true)}
-      className="border border-neutral-800 rounded-xl p-4 space-y-2"
+      className="space-y-2"
     >
-      <h2 className="text-lg font-medium">Reply</h2>
-      <textarea
-        name="content"
-        placeholder="Your reply (markdown)"
-        className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-        rows={5}
-        required
+      <ResetOnIdle
+        justSubmitted={justSubmitted}
+        onReset={() => {
+          formRef.current?.reset();
+          setJustSubmitted(false);
+          onSubmitted?.();
+        }}
       />
-      <SubmitButton />
-      <p className="opacity-60 text-xs">Requires sign-in.</p>
+      <ReplyFormSection>
+        <h2 className="text-lg font-medium">Reply</h2>
+        <ReplyTextArea />
+        <SubmitButton />
+        <p className="text-xs opacity-60">Requires sign-in.</p>
+      </ReplyFormSection>
     </form>
   );
 }

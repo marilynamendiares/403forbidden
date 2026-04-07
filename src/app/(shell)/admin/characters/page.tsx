@@ -1,35 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useRouter } from "next/navigation";
+import AdminSectionCard from "@/components/admin/AdminSectionCard";
+import {
+  useAdminCharacterApplications,
+  type AdminCharacterApplicationRow,
+} from "@/hooks/useCharacterApplications";
+import type { CharacterApplicationStatus } from "@/lib/characterApplication";
 
-type Row = {
-  id: string;
-  name: string;
-  status: "DRAFT" | "SUBMITTED" | "UNDER_REVIEW" | "NEEDS_CHANGES" | "APPROVED";
-  updatedAt: string;
-  createdAt?: string;
-  lastSubmittedAt: string | null;
-  moderatorNote?: string | null;
-  moderatorId?: string | null;
-  user: {
-    id: string;
-    email: string;
-    username: string;
-    profile: { displayName: string; avatarUrl: string | null } | null;
-  };
-};
-
-type ApiPayload = {
-  items?: Row[];
-  groups?: {
-    inReview: Row[];
-    other: Row[];
-  };
-  error?: string;
-};
-
-function badgeClass(status: Row["status"]) {
+function badgeClass(status: CharacterApplicationStatus) {
   switch (status) {
     case "APPROVED":
       return "border-emerald-500/30 bg-emerald-500/10 text-emerald-200";
@@ -52,36 +32,7 @@ function fmt(dt?: string | null) {
 
 export default function AdminCharactersPage() {
   const router = useRouter();
-
-  const [items, setItems] = useState<Row[]>([]);
-  const [groups, setGroups] = useState<{ inReview: Row[]; other: Row[] } | null>(null);
-  const [error, setError] = useState("");
-
-  async function load() {
-    setError("");
-    const res = await fetch("/api/admin/characters", { cache: "no-store" });
-    const data = (await res.json().catch(() => ({}))) as ApiPayload;
-
-    if (!res.ok) {
-      setError(data?.error ?? "Failed to load");
-      setItems([]);
-      setGroups(null);
-      return;
-    }
-
-    const list = (data?.items ?? []) as Row[];
-    setItems(list);
-
-    if (data?.groups?.inReview && data?.groups?.other) {
-      setGroups({ inReview: data.groups.inReview, other: data.groups.other });
-    } else {
-      setGroups(null);
-    }
-  }
-
-  useEffect(() => {
-    load();
-  }, []);
+  const { items, groups, errorMessage, isLoading } = useAdminCharacterApplications();
 
   // fallback если groups нет (для совместимости)
   const submittedFallback = useMemo(
@@ -97,23 +48,23 @@ export default function AdminCharactersPage() {
   const submitted = groups?.inReview ?? submittedFallback;
   const others = groups?.other ?? othersFallback;
 
-  function Card({ r }: { r: Row }) {
+  function Card({ r }: { r: AdminCharacterApplicationRow }) {
     const display = r.user.profile?.displayName ?? r.user.username ?? r.user.email;
 
     return (
       <button
         type="button"
         onClick={() => router.push(`/admin/characters/${r.id}`)}
-        className="w-full text-left rounded-xl border border-neutral-900 hover:border-neutral-800 bg-neutral-950/40 px-4 py-3"
+        className="w-full rounded-xl border border-neutral-900 bg-neutral-950/40 px-4 py-3 text-left transition hover:border-neutral-800 hover:bg-neutral-950/60"
       >
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className="min-w-0">
             <div className="text-sm opacity-70">{display}</div>
-            <div className="text-lg font-semibold mt-1">{r.name}</div>
+            <div className="mt-1 text-lg font-semibold">{r.name}</div>
 
-            <div className="text-xs opacity-60 mt-1">
+            <div className="mt-1 text-xs opacity-60">
               updated {fmt(r.updatedAt)}
-              {r.lastSubmittedAt ? ` • submitted ${fmt(r.lastSubmittedAt)}` : ""}
+              {r.lastSubmittedAt ? ` · submitted ${fmt(r.lastSubmittedAt)}` : ""}
             </div>
           </div>
 
@@ -126,39 +77,48 @@ export default function AdminCharactersPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 pb-10 space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold">Character Applications</h1>
-        <p className="text-sm opacity-70">Admin review queue.</p>
+    <>
+      {errorMessage && <div className="text-sm text-rose-400">{errorMessage}</div>}
+
+      <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <AdminSectionCard
+          eyebrow="Active Queue"
+          title="In Review"
+          subtitle="Submitted and under-review applications waiting for operator action."
+          contentClassName="space-y-3"
+        >
+          {isLoading ? (
+            <div className="text-sm opacity-60">Loading…</div>
+          ) : submitted.length === 0 ? (
+            <div className="text-sm opacity-60">No submitted applications.</div>
+          ) : (
+            <div className="grid gap-3 lg:grid-cols-2">
+              {submitted.map((r) => (
+                <Card key={r.id} r={r} />
+              ))}
+            </div>
+          )}
+        </AdminSectionCard>
+
+        <AdminSectionCard
+          eyebrow="Archive"
+          title="Other"
+          subtitle="Approved drafts and applications not in the active queue."
+          contentClassName="space-y-3"
+        >
+          {isLoading ? (
+            <div className="text-sm opacity-60">Loading…</div>
+          ) : others.length === 0 ? (
+            <div className="text-sm opacity-60">No archived applications.</div>
+          ) : (
+            <div className="grid gap-3">
+              {others.map((r) => (
+                <Card key={r.id} r={r} />
+              ))}
+            </div>
+          )}
+        </AdminSectionCard>
       </div>
-
-      {error && <div className="text-sm text-rose-400">{error}</div>}
-
-      <section className="space-y-3">
-        <div className="text-xs uppercase tracking-wide opacity-60">In review</div>
-        {submitted.length === 0 ? (
-          <div className="text-sm opacity-60">No submitted applications.</div>
-        ) : (
-          <div className="space-y-3">
-            {submitted.map((r) => (
-              <Card key={r.id} r={r} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <div className="text-xs uppercase tracking-wide opacity-60">Other</div>
-        {others.length === 0 ? (
-          <div className="text-sm opacity-60">—</div>
-        ) : (
-          <div className="space-y-3">
-            {others.map((r) => (
-              <Card key={r.id} r={r} />
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
+    </>
   );
 }

@@ -8,9 +8,10 @@ export type NotificationType =
   | "comment.new"
   | "mention"
   | "thread.new_post"
-  | "thread.post_deleted";
+  | "thread.post_deleted"
+  | "thread.post_reported";
 
-export type TargetType = "user" | "book" | "chapter" | "thread" | "comment";
+export type TargetType = "user" | "arc" | "chapter" | "thread" | "comment";
 
 // Единый формат входящего события в outbox (простой MVP)
 export interface NotificationEvent {

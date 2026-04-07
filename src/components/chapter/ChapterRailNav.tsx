@@ -2,6 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import {
+  CENTER_RAIL_ACTIVE_POST_THRESHOLD_PX,
+  CENTER_RAIL_SCROLL_TARGET_OFFSET_PX,
+  getCenterRailScrollRoot,
+} from "@/components/layout/centerRailMetrics";
 
 type ChapterNavItem = {
   id: string;
@@ -35,13 +40,13 @@ export function ChapterRailNav({
   const rafRef = useRef(0);
 
   useEffect(() => {
-    const scrollRoot = document.querySelector<HTMLElement>("[data-center-rail-scroll]");
+    const scrollRoot = getCenterRailScrollRoot();
     if (!scrollRoot || currentChapterPosts.length === 0) return;
 
     const updateActive = () => {
       rafRef.current = 0;
       const rootTop = scrollRoot.getBoundingClientRect().top;
-      const threshold = rootTop + 196;
+      const threshold = rootTop + CENTER_RAIL_ACTIVE_POST_THRESHOLD_PX;
       let nextActive = currentChapterPosts[0]?.id ?? null;
 
       for (const post of currentChapterPosts) {
@@ -75,16 +80,16 @@ export function ChapterRailNav({
   }, [currentChapterPosts]);
 
   function scrollToPost(postId: string) {
-    const scrollRoot = document.querySelector<HTMLElement>("[data-center-rail-scroll]");
+    const scrollRoot = getCenterRailScrollRoot();
     const target = document.getElementById(`post-${postId}`);
     if (!scrollRoot || !target) return;
 
     const rootTop = scrollRoot.getBoundingClientRect().top;
     const targetTop = target.getBoundingClientRect().top;
     const currentTop = scrollRoot.scrollTop;
-    const stickyOffset = 148;
 
-    const nextTop = currentTop + (targetTop - rootTop) - stickyOffset;
+    const nextTop =
+      currentTop + (targetTop - rootTop) - CENTER_RAIL_SCROLL_TARGET_OFFSET_PX;
     scrollRoot.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
   }
 

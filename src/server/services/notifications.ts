@@ -1,13 +1,31 @@
 // src/server/services/notifications.ts
 import { prisma } from "@/server/db";
 
+type NotificationPayload = Record<string, unknown>;
+
+function getPayloadString(payload: NotificationPayload, ...keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function getPayloadStringOrNumber(payload: NotificationPayload, ...keys: string[]) {
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" || typeof value === "number") return value;
+  }
+  return undefined;
+}
+
 export type NotificationView = {
   id: string;
   type: string;
   actorId: string | null;
   targetType: string | null;
   targetId: string | null;
-  payload: any;
+  payload: NotificationPayload;
   isRead: boolean;
   createdAt: Date;
 
@@ -22,11 +40,35 @@ export type NotificationListResult = {
   nextCursor: string | null;
 };
 
+type NotificationCursor = {
+  createdAt: string;
+  id: string;
+};
+
 export async function getUnreadCount(userId: string) {
   const count = await prisma.notification.count({
     where: { userId, isRead: false },
   });
   return count;
+}
+
+function encodeNotificationCursor(cursor: NotificationCursor) {
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeNotificationCursor(cursor: string | null | undefined): NotificationCursor | null {
+  if (!cursor) return null;
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, "base64url").toString("utf8")
+    ) as Partial<NotificationCursor>;
+    if (typeof parsed.createdAt !== "string" || typeof parsed.id !== "string") {
+      return null;
+    }
+    return { createdAt: parsed.createdAt, id: parsed.id };
+  } catch {
+    return null;
+  }
 }
 
 // Внутренний тип того, что достаём из БД
@@ -36,13 +78,13 @@ type RawNotification = {
   actorId: string | null;
   targetType: string | null;
   targetId: string | null;
-  payload: any;
+  payload: NotificationPayload;
   isRead: boolean;
   createdAt: Date;
 };
 
 function formatNotification(n: RawNotification): NotificationView {
-  const payload = (n.payload ?? {}) as any;
+  const payload = (n.payload ?? {}) as NotificationPayload;
 
   let title = n.type;
   let subtitle = "";
@@ -50,56 +92,63 @@ function formatNotification(n: RawNotification): NotificationView {
 
   switch (n.type) {
     case "chapter.published": {
-      const bookSlug: string | undefined =
-        payload.bookSlug ?? payload.slug ?? undefined;
-      const bookTitle: string =
-        payload.bookTitle ??
-        payload.bookName ??
-        bookSlug ??
-        "Untitled book";
+      const arcSlug: string | undefined = getPayloadString(payload, "arcSlug", "slug");
+      const arcTitle: string = getPayloadString(payload, "arcTitle") ?? arcSlug ?? "Untitled arc";
 
       const chapterIndex: number | string | undefined =
-        payload.chapterIndex ?? payload.index ?? undefined;
+        getPayloadStringOrNumber(payload, "chapterIndex", "index");
       const chapterTitle: string =
-        payload.chapterTitle ??
+        getPayloadString(payload, "chapterTitle") ??
         (chapterIndex !== undefined ? `Chapter ${chapterIndex}` : "New chapter");
 
       title = "New chapter!";
-      subtitle = `${chapterTitle} — ${bookTitle}`;
+      subtitle = `${chapterTitle} — ${arcTitle}`;
 
-      if (bookSlug && chapterIndex !== undefined) {
-        href = `/arcs/${bookSlug}/${chapterIndex}`;
-      } else if (bookSlug) {
-        href = `/arcs/${bookSlug}`;
+      if (arcSlug && chapterIndex !== undefined) {
+        href = `/arcs/${arcSlug}/${chapterIndex}`;
+      } else if (arcSlug) {
+        href = `/arcs/${arcSlug}`;
       }
       break;
     }
 
-    case "chapter.posted": {
-      const bookSlug: string | undefined = payload.bookSlug ?? undefined;
-      const bookTitle: string =
-        payload.bookTitle ??
-        payload.bookName ??
-        bookSlug ??
-        "Untitled book";
+    case "chapter.posted":
+    case "chapter.new_post": {
+      const arcSlug: string | undefined = getPayloadString(payload, "arcSlug");
+      const arcTitle: string = getPayloadString(payload, "arcTitle") ?? arcSlug ?? "Untitled arc";
 
       const chapterIndex: number | string | undefined =
-        payload.chapterIndex ?? undefined;
+        getPayloadStringOrNumber(payload, "chapterIndex");
       const chapterTitle: string =
-        payload.chapterTitle ??
+        getPayloadString(payload, "chapterTitle") ??
         (chapterIndex !== undefined ? `Chapter ${chapterIndex}` : "Chapter");
 
-      const postId: string | undefined = payload.postId ?? payload.id ?? undefined;
+      const postId: string | undefined = getPayloadString(payload, "postId", "id");
 
       title = "New post!";
-      subtitle = `${chapterTitle} — ${bookTitle}`;
+      subtitle = `${chapterTitle} — ${arcTitle}`;
 
-      if (bookSlug && chapterIndex !== undefined) {
-        href = `/arcs/${bookSlug}/${chapterIndex}${
+      if (arcSlug && chapterIndex !== undefined) {
+        href = `/arcs/${arcSlug}/${chapterIndex}${
           postId ? `#post-${postId}` : ""
         }`;
-      } else if (bookSlug) {
-        href = `/arcs/${bookSlug}`;
+      } else if (arcSlug) {
+        href = `/arcs/${arcSlug}`;
+      }
+      break;
+    }
+
+    case "thread.post_reported": {
+      const categorySlug = getPayloadString(payload, "categorySlug");
+      const threadSlug = getPayloadString(payload, "threadSlug");
+      const threadTitle = getPayloadString(payload, "threadTitle") ?? threadSlug ?? "Thread";
+      const postId = getPayloadString(payload, "postId");
+
+      title = "Forum post reported";
+      subtitle = threadTitle;
+
+      if (categorySlug && threadSlug) {
+        href = `/forum/${categorySlug}/${threadSlug}${postId ? `#post-${postId}` : ""}`;
       }
       break;
     }
@@ -110,15 +159,11 @@ function formatNotification(n: RawNotification): NotificationView {
       const plain = n.type.replace(/\./g, " ").replace(/_/g, " ");
       title = plain.charAt(0).toUpperCase() + plain.slice(1);
 
-      const bookTitle: string | undefined =
-        payload.bookTitle ??
-        payload.bookName ??
-        payload.bookSlug ??
-        payload.slug ??
-        undefined;
+      const arcTitle: string | undefined =
+        getPayloadString(payload, "arcTitle", "arcSlug", "slug") ?? undefined;
 
-      if (bookTitle) {
-        subtitle = bookTitle;
+      if (arcTitle) {
+        subtitle = arcTitle;
       } else {
         subtitle = "";
       }
@@ -142,12 +187,25 @@ export async function listNotificationsForUser(input: {
   cursor?: string | null;
 }): Promise<NotificationListResult> {
   const { userId, limit, cursor } = input;
+  const decodedCursor = decodeNotificationCursor(cursor);
 
-  const rows: RawNotification[] = await prisma.notification.findMany({
-    where: { userId },
+  const rows = (await prisma.notification.findMany({
+    where: {
+      userId,
+      ...(decodedCursor
+        ? {
+            OR: [
+              { createdAt: { lt: new Date(decodedCursor.createdAt) } },
+              {
+                createdAt: new Date(decodedCursor.createdAt),
+                id: { lt: decodedCursor.id },
+              },
+            ],
+          }
+        : {}),
+    },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
-    ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
     select: {
       id: true,
       type: true,
@@ -158,14 +216,17 @@ export async function listNotificationsForUser(input: {
       isRead: true,
       createdAt: true,
     },
-  });
+  })) as RawNotification[];
 
   let nextCursor: string | null = null;
   let slice = rows;
 
   if (rows.length > limit) {
     const next = rows.pop()!;
-    nextCursor = next.id;
+    nextCursor = encodeNotificationCursor({
+      createdAt: next.createdAt.toISOString(),
+      id: next.id,
+    });
     slice = rows;
   }
 
@@ -175,6 +236,7 @@ export async function listNotificationsForUser(input: {
 
 type NotificationOp =
   | { op: "mark-one"; id: string }
+  | { op: "mark-many"; ids: string[] }
   | { op: "mark-all" }
   | { op: "clear-all" };
 
@@ -183,6 +245,14 @@ export async function applyNotificationOp(userId: string, body: NotificationOp) 
     if (!body.id) throw new Error("Bad Request");
     await prisma.notification.updateMany({
       where: { id: body.id, userId, isRead: false },
+      data: { isRead: true },
+    });
+  } else if (body.op === "mark-many") {
+    if (!Array.isArray(body.ids) || body.ids.length === 0) {
+      throw new Error("Bad Request");
+    }
+    await prisma.notification.updateMany({
+      where: { userId, id: { in: body.ids }, isRead: false },
       data: { isRead: true },
     });
   } else if (body.op === "mark-all") {

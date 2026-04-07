@@ -1,37 +1,26 @@
 // src/hooks/useNotificationsFeed.ts
 "use client";
 
+import { useEffect } from "react";
 import useSWR from "swr";
+import {
+  notificationUnreadEventName,
+  readNotificationUnreadDetail,
+} from "@/lib/notificationUnreadEvents";
+import {
+  notificationsFeedPath,
+  fetchNotificationsFeed,
+  type NotificationsFeedResponse,
+} from "@/lib/notificationsClient";
 
-const fetcher = (url: string) => fetch(url, {
-  cache: "no-store",
-  credentials: "include",
-}).then((r) => r.json());
-
-export type NotificationItem = {
-  id: string;
-  type: string;
-  isRead: boolean;
-  createdAt: string;        // ISO string
-  payload: any;
-
-  // enriched fields (mapped on backend)
-  title: string;
-  subtitle: string;
-  href: string | null;
-};
-
-type FeedResponse = {
-  items: NotificationItem[];
-  nextCursor: string | null;
-};
+export type { NotificationItem } from "@/lib/notificationsClient";
 
 export function useNotificationsFeed(limit = 5, enabled = true) {
-  const key = enabled ? `/api/notifications?limit=${limit}` : null;
+  const key = enabled ? `${notificationsFeedPath}?limit=${limit}` : null;
 
-  const { data, error, isLoading, mutate } = useSWR<FeedResponse>(
+  const { data, error, isLoading, mutate } = useSWR<NotificationsFeedResponse>(
     key,
-    fetcher,
+    fetchNotificationsFeed,
     {
       revalidateOnFocus: false,
       revalidateOnReconnect: false,
@@ -44,6 +33,27 @@ export function useNotificationsFeed(limit = 5, enabled = true) {
       keepPreviousData: true,
     }
   );
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const onLocal = (event: Event) => {
+      const detail = readNotificationUnreadDetail(event);
+      if (!detail) return;
+
+      switch (detail.op) {
+        case "set":
+        case "inc":
+        case "dec":
+        case "clear":
+          void mutate();
+          break;
+      }
+    };
+
+    window.addEventListener(notificationUnreadEventName, onLocal);
+    return () => window.removeEventListener(notificationUnreadEventName, onLocal);
+  }, [enabled, mutate]);
 
   return {
     items: data?.items ?? [],

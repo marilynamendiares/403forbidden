@@ -6,10 +6,16 @@ import { signOut } from "next-auth/react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AvatarImg from "@/components/avatarImg";
+import NoiseOverlay from "@/components/noise/NoiseOverlay";
+import { markNotificationRead } from "@/lib/notificationActions";
+import {
+  emitNotificationUnread,
+} from "@/lib/notificationUnreadEvents";
 import {
   useNotificationsFeed,
   type NotificationItem,
 } from "@/hooks/useNotificationsFeed";
+import { useClickOutside } from "@/hooks/useClickOutside";
 
 type Props = {
   username: string;
@@ -18,13 +24,92 @@ type Props = {
   variant?: "default" | "topbar";
 };
 
-// Просто формат времени для подписи
 function formatTime(iso: string) {
   const dt = new Date(iso);
   return dt.toLocaleTimeString(undefined, {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatNotifCount(count: number) {
+  return count > 99 ? "99+" : count;
+}
+
+function UserMenuNotificationItem({
+  item,
+  onClick,
+}: {
+  item: NotificationItem;
+  onClick: (item: NotificationItem) => void;
+}) {
+  return (
+    <li
+      className={`flex flex-col gap-0.5 px-3 py-2 text-sm ${item.isRead ? "opacity-70" : "bg-white/5"}`}
+    >
+      <button type="button" onClick={() => onClick(item)} className="w-full text-left">
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">{item.title || "Notification"}</span>
+          {!item.isRead && <span className="ml-2 h-2 w-2 rounded-full bg-red-500" />}
+        </div>
+
+        {item.subtitle && (
+          <div className="truncate text-[11px] text-neutral-300">
+            {item.subtitle}
+          </div>
+        )}
+
+        <div className="mt-0.5 text-[11px] text-neutral-500">{formatTime(item.createdAt)}</div>
+      </button>
+    </li>
+  );
+}
+
+function UserMenuNotificationSection({
+  notifLoading,
+  notifItems,
+  hasMore,
+  onClickItem,
+  onViewAll,
+}: {
+  notifLoading: boolean;
+  notifItems: NotificationItem[];
+  hasMore: boolean;
+  onClickItem: (item: NotificationItem) => void;
+  onViewAll: () => void;
+}) {
+  return (
+    <div className="border-t border-white/10">
+      <div className="px-3 pb-1 pt-2 text-[11px] uppercase tracking-wide text-neutral-400">
+        Latest
+      </div>
+
+      {notifLoading && notifItems.length === 0 && (
+        <div className="px-3 py-2 text-xs text-neutral-500">Loading notifications…</div>
+      )}
+
+      {!notifLoading && notifItems.length === 0 && (
+        <div className="px-3 py-2 text-xs text-neutral-500">No recent notifications.</div>
+      )}
+
+      {notifItems.length > 0 && (
+        <ul className="max-h-64 overflow-y-auto">
+          {notifItems.map((item) => (
+            <UserMenuNotificationItem key={item.id} item={item} onClick={onClickItem} />
+          ))}
+        </ul>
+      )}
+
+      {hasMore && (
+        <button
+          className="w-full px-3 py-2 text-left text-xs text-neutral-300 hover:bg-white/5"
+          onClick={onViewAll}
+        >
+          View all notifications →
+        </button>
+      )}
+    </div>
+  );
 }
 
 export default function UserMenu({
@@ -46,14 +131,7 @@ export default function UserMenu({
     hasMore,
   } = useNotificationsFeed(5, open);
 
-  useEffect(() => {
-    const onDocClick = (e: MouseEvent) => {
-      if (!ref.current) return;
-      if (!ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, []);
+  useClickOutside(ref, open, () => setOpen(false));
 
   // при открытии меню подтягиваем список, но не чаще чем раз в 60с
   const lastFeedSyncRef = useRef(0);
@@ -67,31 +145,6 @@ export default function UserMenu({
     lastFeedSyncRef.current = now;
     refreshNotifFeed();
   }, [open, refreshNotifFeed]);
-
-  // ЛОКАЛЬНАЯ синхронизация бейджа и фида из /notifications (mark read / mark all)
-  useEffect(() => {
-    const onLocal = (e: Event) => {
-      const { detail } = e as CustomEvent<{
-        op?: "set" | "inc" | "dec" | "clear";
-        count?: number;
-        delta?: number;
-      }>;
-      if (!detail) return;
-
-      switch (detail.op) {
-        case "set":
-        case "inc":
-        case "dec":
-        case "clear":
-          refreshNotifFeed();
-          break;
-      }
-    };
-
-    window.addEventListener("notif:unread", onLocal as EventListener);
-    return () =>
-      window.removeEventListener("notif:unread", onLocal as EventListener);
-  }, [refreshNotifFeed]);
 
   const handleSignOut = () => {
     void signOut();
@@ -107,17 +160,10 @@ export default function UserMenu({
     if (!n.href) return;
 
     try {
-      await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ op: "mark-one", id: n.id }),
-      }).catch(() => {});
-
-      window.dispatchEvent(
-        new CustomEvent("notif:unread", {
-          detail: { op: "dec", delta: 1 },
-        })
-      );
+      const result = await markNotificationRead(n.id).catch(() => null);
+      if (!result?.ok) {
+        emitNotificationUnread({ op: "dec", delta: 1 });
+      }
     } catch {}
 
     setOpen(false);
@@ -129,83 +175,57 @@ export default function UserMenu({
       ref={ref}
       className={topbar ? "relative h-full w-full" : "relative"}
     >
-<button
-  onClick={() => setOpen((v) => !v)}
-  className={[
-    "relative",          // ✅ нужен stacking context
-    "h-full w-full",
-    "rounded-none",
-    "bg-black/0 hover:bg-black/5",
-    "border-0",
-    "outline-none",
-    "focus-visible:ring-2 focus-visible:ring-black/20",
-  ].join(" ")}
-  aria-haspopup="menu"
-  aria-expanded={open}
-  aria-label="Open user menu"
->
-  {/* avatar image layer */}
-<span
-  className="relative block h-full w-full overflow-hidden rounded-none"
-  style={{ isolation: "isolate" }}
->
-  <AvatarImg
-    src={avatarUrl ?? undefined}
-    alt={`${username} avatar`}
-    className="h-full w-full object-cover"
-  />
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={[
+          "relative h-full w-full rounded-none border-0 bg-black/0 outline-none",
+          "hover:bg-black/5 focus-visible:ring-2 focus-visible:ring-black/20",
+        ].join(" ")}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label="Open user menu"
+      >
+        <span
+          className="relative block h-full w-full overflow-hidden rounded-none"
+          style={{ isolation: "isolate" }}
+        >
+          <AvatarImg
+            src={avatarUrl ?? undefined}
+            alt={`${username} avatar`}
+            className="h-full w-full object-cover"
+          />
 
-  {/* Noise ON TOP of avatar pixels, but NEVER blocks clicks */}
-  <span
-    aria-hidden="true"
-    className="pointer-events-none absolute inset-0"
-    style={{ zIndex: 2 }}
-  >
-    {/* Dark sand (good on white areas / skin highlights) */}
-    <span
-      className="absolute inset-0"
-      style={{
-        background: "#000",
-        opacity: 0.22,
-        mixBlendMode: "multiply",
-        filter: "url(#grainDarkSand)",
-      }}
-    />
-    {/* Bright sparkles (good on dark hair / shadows) */}
-    <span
-      className="absolute inset-0"
-      style={{
-        background: "#fff",
-        opacity: 0.10,
-        mixBlendMode: "screen",
-        filter: "url(#grainBrightSparkles)",
-      }}
-    />
-  </span>
-</span>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0 z-[2]">
+            <NoiseOverlay
+              className="absolute inset-0 h-full w-full"
+              sandOpacity={0.22}
+              sparkleOpacity={0.1}
+            />
+          </span>
+        </span>
 
-  {notifCount > 0 && (
-    <span
-      className="
-        absolute -top-2 -right-2 z-20
-        inline-flex h-5 min-w-5 items-center justify-center
-        rounded-full bg-red-500 px-1 text-[11px] font-semibold leading-none text-white
-        shadow-md
-      "
-    >
-      {notifCount > 99 ? "99+" : notifCount}
-    </span>
-  )}
-</button>
+        {notifCount > 0 && (
+          <span
+            className="
+              absolute -top-2 -right-2 z-20
+              inline-flex h-5 min-w-5 items-center justify-center
+              rounded-full bg-red-500 px-1 text-[11px] font-semibold leading-none text-white
+              shadow-md
+            "
+          >
+            {formatNotifCount(notifCount)}
+          </span>
+        )}
+      </button>
 
-{open && (
-  <div
-    role="menu"
-    className={[
-      "absolute z-50 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900/95 backdrop-blur shadow-lg",
-      topbar ? "left-0" : "right-0",
-    ].join(" ")}
-  >
+      {open && (
+        <div
+          role="menu"
+          className={[
+            "absolute z-50 mt-2 w-72 overflow-hidden rounded-xl border border-white/10 bg-neutral-900/95 shadow-lg backdrop-blur",
+            topbar ? "left-0" : "right-0",
+          ].join(" ")}
+        >
           <Link
             href={`/u/${encodeURIComponent(username)}`}
             className="block px-3 py-2 text-sm hover:bg-white/5"
@@ -224,75 +244,23 @@ export default function UserMenu({
             <span>Notifications</span>
             {notifCount > 0 && (
               <span className="ml-2 rounded-full bg-red-500 px-1.5 text-[10px] font-semibold text-white">
-                {notifCount > 99 ? "99+" : notifCount}
+                {formatNotifCount(notifCount)}
               </span>
             )}
           </Link>
 
-          <div className="border-t border-white/10">
-            <div className="px-3 pt-2 pb-1 text-[11px] uppercase tracking-wide text-neutral-400">
-              Latest
-            </div>
-
-            {notifLoading && notifItems.length === 0 && (
-              <div className="px-3 py-2 text-xs text-neutral-500">
-                Loading notifications…
-              </div>
-            )}
-
-            {!notifLoading && notifItems.length === 0 && (
-              <div className="px-3 py-2 text-xs text-neutral-500">
-                No recent notifications.
-              </div>
-            )}
-
-            {notifItems.length > 0 && (
-              <ul className="max-h-64 overflow-y-auto">
-                {notifItems.map((n) => (
-                  <li
-                    key={n.id}
-                    className={`px-3 py-2 text-sm flex flex-col gap-0.5 ${
-                      n.isRead ? "opacity-70" : "bg-white/5"
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => void handleNotificationClick(n)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate">{n.title || "Notification"}</span>
-                        {!n.isRead && (
-                          <span className="ml-2 h-2 w-2 rounded-full bg-red-500" />
-                        )}
-                      </div>
-
-                      {n.subtitle && (
-                        <div className="text-[11px] text-neutral-300 truncate">
-                          {n.subtitle}
-                        </div>
-                      )}
-
-                      <div className="text-[11px] text-neutral-500 mt-0.5">
-                        {formatTime(n.createdAt)}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {hasMore && (
-              <button
-                className="w-full px-3 py-2 text-xs text-neutral-300 hover:bg-white/5 text-left"
-                onClick={() => {
-                  window.location.href = "/notifications";
-                }}
-              >
-                View all notifications →
-              </button>
-            )}
-          </div>
+          <UserMenuNotificationSection
+            notifLoading={notifLoading}
+            notifItems={notifItems}
+            hasMore={hasMore}
+            onClickItem={(item) => {
+              void handleNotificationClick(item);
+            }}
+            onViewAll={() => {
+              setOpen(false);
+              router.push("/notifications");
+            }}
+          />
 
           <button
             className="block w-full px-3 py-2 text-left text-sm text-red-300 hover:bg-red-500/10"

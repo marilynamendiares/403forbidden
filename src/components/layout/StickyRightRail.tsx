@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { RAIL_STICKY_MASK_IMAGE, useRailStickyTransform } from "@/components/layout/railSticky";
 
 type Props = {
   sticky: ReactNode;
@@ -16,32 +17,7 @@ export function StickyRightRail({
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const stickyRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const scrollNode = scrollRef.current;
-    const stickyNode = stickyRef.current;
-    if (!scrollNode || !stickyNode) return;
-
-    let raf = 0;
-
-    const updateSticky = () => {
-      raf = 0;
-      const y = Math.max(0, 72 - scrollNode.scrollTop);
-      stickyNode.style.transform = `translateY(${y}px)`;
-    };
-
-    const onScroll = () => {
-      if (raf) return;
-      raf = window.requestAnimationFrame(updateSticky);
-    };
-
-    updateSticky();
-    scrollNode.addEventListener("scroll", onScroll, { passive: true });
-
-    return () => {
-      scrollNode.removeEventListener("scroll", onScroll);
-      if (raf) window.cancelAnimationFrame(raf);
-    };
-  }, []);
+  useRailStickyTransform(scrollRef, stickyRef);
 
   return (
     <div className="relative h-full min-h-0 min-w-0 w-full">
@@ -58,10 +34,8 @@ export function StickyRightRail({
         ref={scrollRef}
         className="scrollbar-hidden h-full min-h-0 min-w-0 overflow-y-auto pb-10 pl-[72px]"
         style={{
-          WebkitMaskImage:
-            "linear-gradient(to bottom, transparent 0px, rgba(0,0,0,0.06) 28px, rgba(0,0,0,0.18) 52px, rgba(0,0,0,0.48) 78px, rgba(0,0,0,0.82) 108px, #000 132px, #000 100%)",
-          maskImage:
-            "linear-gradient(to bottom, transparent 0px, rgba(0,0,0,0.06) 28px, rgba(0,0,0,0.18) 52px, rgba(0,0,0,0.48) 78px, rgba(0,0,0,0.82) 108px, #000 132px, #000 100%)",
+          WebkitMaskImage: RAIL_STICKY_MASK_IMAGE,
+          maskImage: RAIL_STICKY_MASK_IMAGE,
         }}
       >
         <div aria-hidden="true" className="h-[72px]" />

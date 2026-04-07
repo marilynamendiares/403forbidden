@@ -4,17 +4,28 @@
 import Link from "next/link";
 import { useState } from "react";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
+import {
+  createChapterPost,
+  type ChapterPostListItem,
+} from "@/lib/chapterPostsClient";
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  return "Failed to post";
+}
 
 export function ChapterComposer({
   slug,
   index,
   disabled,
   nextChapterIndex,
+  onPosted,
 }: {
   slug: string;
   index: number | string;
   disabled?: boolean;
   nextChapterIndex?: number | null;
+  onPosted?: (post: ChapterPostListItem) => void;
 }) {
   const [val, setVal] = useState(""); // HTML из редактора
   const [busy, setBusy] = useState(false);
@@ -54,28 +65,21 @@ export function ChapterComposer({
     setError(null);
 
     try {
-      const res = await fetch(`/api/books/${slug}/${index}/posts`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        credentials: "include",
-        cache: "no-store",
-        body: JSON.stringify({ contentMd: val }), // пока храним HTML в contentMd
+      const createdPost = await createChapterPost({
+        slug,
+        index,
+        contentMd: val,
       });
 
-      if (!res.ok) {
-        let msg = `Failed (${res.status})`;
-        try {
-          const json = await res.json();
-          msg = json?.error || msg;
-        } catch {}
-        throw new Error(msg);
+      if (createdPost) {
+        onPosted?.(createdPost);
       }
 
       // Успех → очищаем редактор. SSE подхватит новый пост сам.
       setVal("");
       setOpen(false);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to post");
+    } catch (err: unknown) {
+      setError(getErrorMessage(err));
     } finally {
       setBusy(false);
     }

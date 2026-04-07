@@ -1,30 +1,19 @@
 // src/app/notifications/page.tsx
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import { redirect } from "next/navigation";
-import { prisma } from "@/server/db";
 import { MarkReadButton } from "@/components/MarkReadButton";
 import { MarkAllReadButton } from "@/components/MarkAllReadButton";
-import { ClearAllButton } from "@/components/ClearAllButton"; // ← НОВОЕ
+import { ClearAllButton } from "@/components/ClearAllButton";
+import { getSessionViewer } from "@/server/session";
+import { listNotificationsForUser } from "@/server/services/notifications";
 
 export default async function NotificationsPage() {
-  const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
+  const { userId } = await getSessionViewer();
   if (!userId) redirect("/login");
 
-  const items = await prisma.notification.findMany({
-    where: { userId },
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: 50,
-    select: {
-      id: true,
-      type: true,
-      targetType: true,
-      targetId: true,
-      isRead: true,
-      createdAt: true,
-      payload: true,
-    },
+  const { items } = await listNotificationsForUser({
+    userId,
+    limit: 50,
+    cursor: null,
   });
 
   return (
@@ -33,7 +22,7 @@ export default async function NotificationsPage() {
         <h1 className="text-xl font-semibold">Notifications</h1>
         <div className="flex items-center gap-2">
           <MarkAllReadButton />
-          <ClearAllButton /> {/* ← НОВОЕ */}
+          <ClearAllButton />
         </div>
       </div>
 
@@ -48,9 +37,9 @@ export default async function NotificationsPage() {
             className="flex items-center justify-between rounded-xl border p-3"
           >
             <div>
-              <div className="font-medium">{n.type}</div>
+              <div className="font-medium">{n.title}</div>
               <div className="text-xs text-muted-foreground">
-                {n.targetType}:{n.targetId} •{" "}
+                {n.subtitle || `${n.targetType}:${n.targetId}`} •{" "}
                 {new Date(n.createdAt).toLocaleString()}
               </div>
             </div>

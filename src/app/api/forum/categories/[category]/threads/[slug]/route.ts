@@ -1,58 +1,79 @@
 import type { NextRequest } from "next/server";
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { prisma } from "@/server/db";
-import { requireAdmin } from "@/server/admin";
+import { z } from "zod";
+import { isAdminSession } from "@/server/admin";
+import { getSessionViewer } from "@/server/session";
+import {
+  deleteThreadForUser,
+  setThreadHiddenForAdmin,
+  setThreadLockedForUser,
+} from "@/server/services/forum";
+import { getRouteErrorResponse } from "@/server/api";
+import { error, json, noContent } from "@/server/http";
 
 type Ctx = { params: Promise<{ category: string; slug: string }> };
 
-export async function GET(req: NextRequest, { params }: Ctx) {
+export async function DELETE(_req: NextRequest, { params }: Ctx) {
   const { category, slug } = await params;
+  const { session, userId } = await getSessionViewer();
+  if (!userId || !session) return error("unauthorized", 401);
 
-  const thread = await prisma.forumThread.findFirst({
-    where: { slug, category: { slug: category } },
-    select: { id: true, authorId: true },
-  });
-
-  if (!thread) return NextResponse.json({ error: "thread_not_found" }, { status: 404 });
-
-  return NextResponse.json({ id: thread.id, authorId: thread.authorId });
+  try {
+    await deleteThreadForUser({
+      category,
+      slug,
+      userId,
+      isAdmin: Boolean(isAdminSession(session)),
+    });
+    return noContent();
+  } catch (routeError) {
+    console.error("Failed to delete thread", routeError);
+    return getRouteErrorResponse(routeError, "internal_error");
+  }
 }
 
-export async function DELETE(req: NextRequest, { params }: Ctx) {
-  const { category, slug } = await params;
-
-  const session = await getServerSession(authOptions);
-  const userId =
-    ((session as any)?.user?.id as string | undefined) ??
-    ((session as any)?.userId as string | undefined);
-
-  if (!userId) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
-  const thread = await prisma.forumThread.findFirst({
-    where: { slug, category: { slug: category } },
-    select: { id: true, authorId: true },
+const PatchSchema = z
+  .object({
+    hidden: z.boolean().optional(),
+    locked: z.boolean().optional(),
+  })
+  .refine((value) => value.hidden !== undefined || value.locked !== undefined, {
+    message: "hidden_or_locked_required",
+  })
+  .refine((value) => !(value.hidden !== undefined && value.locked !== undefined), {
+    message: "one_field_only",
   });
 
-  if (!thread) return NextResponse.json({ error: "thread_not_found" }, { status: 404 });
+export async function PATCH(req: NextRequest, { params }: Ctx) {
+  const { category, slug } = await params;
+  const { session, userId } = await getSessionViewer();
+  if (!userId || !session) return error("unauthorized", 401);
 
-  // права: админ может всё, иначе только автор треда
-  let isAdmin = false;
   try {
-    requireAdmin(session as any);
-    isAdmin = true;
-  } catch {}
+    const parsed = PatchSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
+      return json({ error: "Bad Request" }, { status: 400 });
+    }
 
-  if (!isAdmin && thread.authorId !== userId) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+    const isAdmin = Boolean(isAdminSession(session));
+    const result =
+      parsed.data.hidden !== undefined
+        ? await setThreadHiddenForAdmin({
+            category,
+            slug,
+            userId,
+            hidden: parsed.data.hidden,
+            isAdmin,
+          })
+        : await setThreadLockedForUser({
+            category,
+            slug,
+            userId,
+            locked: Boolean(parsed.data.locked),
+            isAdmin,
+          });
+    return json(result);
+  } catch (routeError) {
+    console.error("Failed to update thread moderation state", routeError);
+    return getRouteErrorResponse(routeError, "internal_error");
   }
-
-  // безопасно удаляем: сначала посты, потом тред
-  await prisma.$transaction([
-    prisma.forumPost.deleteMany({ where: { threadId: thread.id } }),
-    prisma.forumThread.delete({ where: { id: thread.id } }),
-  ]);
-
-  return new NextResponse(null, { status: 204 });
 }

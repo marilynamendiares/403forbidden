@@ -1,32 +1,51 @@
 // src/server/follow.ts
 import { prisma } from "@/server/db";
+import { refreshDiscoveryMetricsForArc } from "@/server/arcs/discoveryPipeline";
 
-export async function getBookBySlug(slug: string) {
+export async function getArcBySlug(slug: string) {
   // В твоей схеме slug не уникален (уникален ownerId+slug), поэтому берём первый по slug.
-  return prisma.book.findFirst({
+  return prisma.arc.findFirst({
     where: { slug },
     select: {
       id: true,
       ownerId: true,
       title: true,
       slug: true,
+      publicSlug: true,
       tagline: true,
+      hook: true,
+      summary: true,
       coverUrl: true,
       status: true,
       type: true,
+      format: true,
+      joinPolicy: true,
+      visibility: true,
+      searchVisibility: true,
+      allowDiscovery: true,
       createdAt: true,
       updatedAt: true,
       introHtml: true,
+      tags: {
+        select: {
+          tag: {
+            select: {
+              name: true,
+              slug: true,
+            },
+          },
+        },
+      },
     },
   });
 }
 
-export async function getFollowStatus(userId: string | null, bookId: string) {
+export async function getArcFollowStatus(userId: string | null, arcId: string) {
   const [count, me] = await Promise.all([
-    prisma.bookFollow.count({ where: { bookId } }),
+    prisma.arcFollow.count({ where: { arcId } }),
     userId
-      ? prisma.bookFollow.findUnique({
-          where: { userId_bookId: { userId, bookId } },
+      ? prisma.arcFollow.findUnique({
+          where: { userId_arcId: { userId, arcId } },
           select: { id: true },
         })
       : Promise.resolve(null),
@@ -34,25 +53,27 @@ export async function getFollowStatus(userId: string | null, bookId: string) {
   return { count, followed: !!me };
 }
 
-export async function followBook(userId: string, bookId: string) {
-  await prisma.bookFollow.upsert({
-    where: { userId_bookId: { userId, bookId } },
+export async function followArc(userId: string, arcId: string) {
+  await prisma.arcFollow.upsert({
+    where: { userId_arcId: { userId, arcId } },
     update: {},
-    create: { userId, bookId },
+    create: { userId, arcId },
   });
-  return getFollowStatus(userId, bookId);
+  await refreshDiscoveryMetricsForArc(arcId);
+  return getArcFollowStatus(userId, arcId);
 }
 
-export async function unfollowBook(userId: string, bookId: string) {
-  await prisma.bookFollow
-    .delete({ where: { userId_bookId: { userId, bookId } } })
+export async function unfollowArc(userId: string, arcId: string) {
+  await prisma.arcFollow
+    .delete({ where: { userId_arcId: { userId, arcId } } })
     .catch(() => {});
-  return getFollowStatus(userId, bookId);
+  await refreshDiscoveryMetricsForArc(arcId);
+  return getArcFollowStatus(userId, arcId);
 }
 
-export async function listBookFollowerIds(bookId: string): Promise<string[]> {
-  const rows = await prisma.bookFollow.findMany({
-    where: { bookId },
+export async function listArcFollowerIds(arcId: string): Promise<string[]> {
+  const rows = await prisma.arcFollow.findMany({
+    where: { arcId },
     select: { userId: true },
   });
   return rows.map((r: { userId: string }) => r.userId);

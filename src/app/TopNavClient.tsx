@@ -3,6 +3,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SHELL_TOPBAR_HEIGHT } from "@/app/shell/shellMetrics";
 
 const NAV = [
   { href: "/forum", label: "F0RUM", num: "01" },
@@ -22,9 +23,7 @@ export default function TopNavClient() {
   return (
     <nav
       className="flex h-full items-stretch justify-end gap-x-16"
-      style={{
-        background: "transparent",
-      }}
+      style={{ background: "transparent", minHeight: `${SHELL_TOPBAR_HEIGHT}px` }}
     >
       {NAV.map((item) => {
         const active = isActive(pathname, item.href);

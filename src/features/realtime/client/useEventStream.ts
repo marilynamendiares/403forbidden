@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, type MutableRefObject } from "react";
 
-export type Handler = (payload: any) => void;
+type GlobalEventStreamStore = typeof globalThis & {
+  [GKEY]?: ESState;
+};
+
+export type Handler = (payload: unknown) => void;
 export type HandlerMap = Record<string, Handler>;
 
 export type EventStreamOptions = {
@@ -15,10 +19,10 @@ export type EventStreamOptions = {
   /** нативный EventSource не поддерживает credentials; оставляем для совместимости */
   withCredentials?: boolean;
   onOpen?: () => void;
-  onError?: (e: any) => void;
+  onError?: (e: unknown) => void;
 };
 
-type Subscriber = { handlers: HandlerMap };
+type Subscriber = { handlersRef: MutableRefObject<HandlerMap> };
 
 // --- HMR/StrictMode-safe singleton state (живёт на globalThis) ---
 type ESState = {
@@ -35,7 +39,7 @@ type ESState = {
 const GKEY = "__403_ES_STATE__";
 
 function getState(): ESState {
-  const g = globalThis as any;
+  const g = globalThis as GlobalEventStreamStore;
   if (!g[GKEY]) {
     g[GKEY] = {
       es: null,
@@ -49,7 +53,7 @@ function getState(): ESState {
   return g[GKEY] as ESState;
 }
 
-function safeJson(s: any) {
+function safeJson(s: unknown) {
   if (typeof s !== "string") return s;
   try {
     return JSON.parse(s);
@@ -112,12 +116,12 @@ function ensureES(url: string, opts?: EventStreamOptions) {
 
     st.es.onmessage = (ev) => {
       const payload = safeJson(ev.data);
-      for (const sub of st.subs) sub.handlers["message"]?.(payload);
+      for (const sub of st.subs) sub.handlersRef.current["message"]?.(payload);
     };
 
     st.es.addEventListener("hello", (ev) => {
       const payload = safeJson((ev as MessageEvent).data);
-      for (const sub of st.subs) sub.handlers["hello"]?.(payload);
+      for (const sub of st.subs) sub.handlersRef.current["hello"]?.(payload);
     });
   }
 }
@@ -137,7 +141,7 @@ function attachNamedListeners(url: string, eventNames: string[]) {
 
     st.es.addEventListener(name, (ev) => {
       const payload = safeJson((ev as MessageEvent).data);
-      for (const sub of st.subs) sub.handlers[name]?.(payload);
+      for (const sub of st.subs) sub.handlersRef.current[name]?.(payload);
     });
   }
 }
@@ -164,15 +168,19 @@ function maybeCloseES() {
  * Multiple calls won't create multiple network connections.
  */
 export function useEventStream(handlers: HandlerMap, opts?: EventStreamOptions) {
-  const url = useMemo(() => buildUrl(opts), [opts?.url, opts?.topic, JSON.stringify(opts?.query ?? {})]);
-
+  const url = buildUrl(opts);
   const eventNames = useMemo(() => Object.keys(handlers), [handlers]);
+  const handlersRef = useRef(handlers);
+
+  useEffect(() => {
+    handlersRef.current = handlers;
+  }, [handlers]);
 
   useEffect(() => {
     const st = getState();
     st.refcount += 1;
 
-    const sub: Subscriber = { handlers };
+    const sub: Subscriber = { handlersRef };
     st.subs.push(sub);
 
     attachNamedListeners(url, eventNames);

@@ -8,4 +8,4 @@ export const redis = new Redis({
 
 export const CHAPTER_LOCK_TTL_SEC = 180; // 3 минуты
 export const chapterLockKey = (chapterId: string) => `lock:chapter:${chapterId}`;
-export const bookLockKey = (bookId: string) => `lock:book:${bookId}`;
+export const arcLockKey = (arcId: string) => `lock:arc:${arcId}`;

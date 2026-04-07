@@ -3,7 +3,14 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
-import AvatarImg from "@/components/avatarImg";
+import { useStableEvent } from "@/hooks/useStableEvent";
+import { clearDraft, readDraft, writeDraft } from "@/lib/draftStorage";
+import { getWriterSaveErrorMessage, getWriterStatusLabel } from "@/lib/writerStatus";
+import { WriterStatusNotice } from "@/components/writer/WriterStatusNotice";
+import {
+  ChapterIntroDraftActions,
+  ChapterIntroViewActions,
+} from "@/components/chapter/ChapterIntroUi";
 
 type Props = {
   chapterId: string; // 🆕 нужен для уникального ключа драфта
@@ -24,57 +31,6 @@ export function ChapterIntroClient({
   const [title, setTitle] = useState(defaultTitle);
   const [content, setContent] = useState(defaultContent);
   const [isPending, startTransition] = useTransition();
-
-  // ── soft-lock (server) ──────────────────────────────────────────────
-  const [tabId] = useState(() => crypto.randomUUID());
-  type LockedBy = {
-    userId: string;
-    username?: string;
-    avatarUrl?: string | null;
-    since?: number;
-  };
-
-  const [lock, setLock] = useState<
-    | { status: "idle" }
-    | { status: "mine" }
-    | { status: "locked"; lockedBy: LockedBy }
-    | { status: "error"; message: string }
-  >({ status: "idle" });
-
-
-  async function lockCall(action: "acquire_or_beat" | "release" | "status") {
-    const res = await fetch("/api/lock", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        resource: "chapter",
-        id: chapterId,
-        action,
-        tabId,
-      }),
-    });
-
-    // 423 тоже может быть JSON
-    const payload = await res.json().catch(() => ({}));
-
-    if (res.status === 423) {
-      setLock({
-        status: "locked",
-        lockedBy: payload.lockedBy ?? { userId: "unknown", username: "someone", avatarUrl: null },
-      });
-      return false;
-    }
-
-    if (!res.ok) {
-      setLock({ status: "error", message: payload?.error ?? "lock_failed" });
-      return false;
-    }
-
-    // ok
-    setLock({ status: "mine" });
-    return true;
-  }
-
 
   // baseline, от которого считаем "грязность"
   const baseline = useMemo(
@@ -101,41 +57,76 @@ export function ChapterIntroClient({
   );
   const [draftRestored, setDraftRestored] = useState(false);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
-  const [lastSavedAt, setLastSavedAt] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // загрузка драфта при монтировании
   useEffect(() => {
     if (!draftKey) return;
-    try {
-      const raw = localStorage.getItem(draftKey);
-      if (!raw) return;
+    const parsed = readDraft<{ title?: string; content?: string }>(draftKey);
+    if (
+      !parsed ||
+      typeof parsed.title !== "string" ||
+      typeof parsed.content !== "string"
+    ) {
+      return;
+    }
 
-      const parsed = JSON.parse(raw) as
-        | { title?: string; content?: string }
-        | null;
-      if (!parsed) return;
-      if (
-        typeof parsed.title !== "string" ||
-        typeof parsed.content !== "string"
-      ) {
-        return;
-      }
+    const t = parsed.title;
+    const c = parsed.content;
 
-      const t = parsed.title;
-      const c = parsed.content;
+    const baselineTitle = baseline.title;
+    const baselineContent = baseline.content;
 
+    const baselineContentEmpty = baselineContent.trim().length === 0;
+    const draftContentEmpty = c.trim().length === 0;
+
+    let hasMeaningful = false;
+    if (!baselineContentEmpty) {
+      hasMeaningful = !draftContentEmpty;
+    } else {
+      hasMeaningful =
+        !draftContentEmpty || (t.trim().length > 0 && t !== baselineTitle);
+    }
+
+    const differsFromBaseline =
+      t !== baselineTitle || c !== baselineContent;
+
+    if (!hasMeaningful || !differsFromBaseline) {
+      clearDraft(draftKey);
+      return;
+    }
+
+    setTitle(t);
+    setContent(c);
+    setDraftRestored(true);
+    setSaveError(null);
+  }, [draftKey, baseline.title, baseline.content]);
+
+  // авто-сохранение драфта (debounce)
+  useEffect(() => {
+    if (!draftKey) return;
+
+    if (!dirty) {
+      clearDraft(draftKey);
+      setSaveState("idle");
+      return;
+    }
+
+    setSaveState("saving");
+
+    const timeout = window.setTimeout(() => {
       const baselineTitle = baseline.title;
       const baselineContent = baseline.content;
+      const t = title;
+      const c = content;
 
       const baselineContentEmpty = baselineContent.trim().length === 0;
       const draftContentEmpty = c.trim().length === 0;
 
       let hasMeaningful = false;
       if (!baselineContentEmpty) {
-        // у главы уже есть текст → драфт должен быть не пустой
         hasMeaningful = !draftContentEmpty;
       } else {
-        // у сервера пусто → достаточно непустого контента или иного title
         hasMeaningful =
           !draftContentEmpty || (t.trim().length > 0 && t !== baselineTitle);
       }
@@ -144,71 +135,13 @@ export function ChapterIntroClient({
         t !== baselineTitle || c !== baselineContent;
 
       if (!hasMeaningful || !differsFromBaseline) {
-        localStorage.removeItem(draftKey);
+        clearDraft(draftKey);
+        setSaveState("idle");
         return;
       }
 
-      setTitle(t);
-      setContent(c);
-      setDraftRestored(true);
-    } catch {
-      // ignore
-    }
-  }, [draftKey, baseline.title, baseline.content]);
-
-  // авто-сохранение драфта (debounce)
-  useEffect(() => {
-    if (!draftKey) return;
-
-    if (!dirty) {
-      try {
-        localStorage.removeItem(draftKey);
-      } catch {
-        // ignore
-      }
-      setSaveState("idle");
-      setLastSavedAt(null);
-      return;
-    }
-
-    setSaveState("saving");
-
-    const timeout = window.setTimeout(() => {
-      try {
-        const baselineTitle = baseline.title;
-        const baselineContent = baseline.content;
-        const t = title;
-        const c = content;
-
-        const baselineContentEmpty = baselineContent.trim().length === 0;
-        const draftContentEmpty = c.trim().length === 0;
-
-        let hasMeaningful = false;
-        if (!baselineContentEmpty) {
-          hasMeaningful = !draftContentEmpty;
-        } else {
-          hasMeaningful =
-            !draftContentEmpty || (t.trim().length > 0 && t !== baselineTitle);
-        }
-
-        const differsFromBaseline =
-          t !== baselineTitle || c !== baselineContent;
-
-        if (!hasMeaningful || !differsFromBaseline) {
-          localStorage.removeItem(draftKey);
-          setSaveState("idle");
-          setLastSavedAt(null);
-          return;
-        }
-
-        localStorage.setItem(
-          draftKey,
-          JSON.stringify({ title: t, content: c })
-        );
+      if (writeDraft(draftKey, { title: t, content: c })) {
         setSaveState("saved");
-        setLastSavedAt(Date.now());
-      } catch {
-        // ignore
       }
     }, 400);
 
@@ -217,48 +150,56 @@ export function ChapterIntroClient({
 
   function discardLocalDraft() {
     if (!draftKey) return;
-    try {
-      localStorage.removeItem(draftKey);
-    } catch {
-      // ignore
-    }
+    clearDraft(draftKey);
     setTitle(baseline.title);
     setContent(baseline.content);
     setDraftRestored(false);
     setSaveState("idle");
-    setLastSavedAt(null);
+    setSaveError(null);
   }
 
   const hasDraftState = draftRestored || dirty || saveState === "saving" || saveState === "saved";
-  const statusLabel = draftRestored
-    ? "local draft restored"
-    : hasDraftState
-      ? "draft saved"
-      : "no local changes";
+  const statusLabel = getWriterStatusLabel({
+    draftRestored,
+    hasDraftState,
+    saveState,
+    dirty,
+  });
 
-  function handleSave() {
+  useEffect(() => {
+    if (!dirty) {
+      setSaveError(null);
+    }
+  }, [dirty]);
+
+  const handleSave = useStableEvent(async () => {
     if (!canEdit || isPending) return;
     const fd = new FormData();
     fd.set("title", title);
     fd.set("content", content);
 
     startTransition(async () => {
-      await onSave(fd);
-      await lockCall("release");
-      setEditing(false);
-      // после успешного сохранения страница перерендерится с новым baseline,
-      // а эффект автосейва сам очистит драфт
+      try {
+        await onSave(fd);
+        setSaveError(null);
+        setEditing(false);
+        // после успешного сохранения страница перерендерится с новым baseline,
+        // а эффект автосейва сам очистит драфт
+      } catch (error) {
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : "Failed to save chapter intro.";
+        setSaveError(getWriterSaveErrorMessage(message, "chapter intro"));
+      }
     });
+  });
+
+  async function handleCancel() {
+    if (isPending) return;
+    setEditing(false);
+    discardLocalDraft();
   }
-
-async function handleCancel() {
-  if (isPending) return;
-  await lockCall("release");
-  setEditing(false);
-  discardLocalDraft();
-}
-
-
 
   // хоткей Cmd/Ctrl+S только в режиме редактирования
   useEffect(() => {
@@ -267,105 +208,13 @@ async function handleCancel() {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        handleSave();
+        void handleSave();
       }
     };
 
-    window.addEventListener("keydown", onKey as any);
-    return () => window.removeEventListener("keydown", onKey as any);
-  }, [editing, title, content, canEdit, isPending]); // deps ок
-
-    // heartbeat: пока редактируем и лок мой
-  useEffect(() => {
-    if (!editing) return;
-
-    let stopped = false;
-
-    const tick = async () => {
-      if (stopped) return;
-
-      // если уже знаем, что лок чужой/ошибка — не спамим
-      if (lock.status === "locked" || lock.status === "error") return;
-
-      await lockCall("acquire_or_beat");
-    };
-
-    // сразу пробуем beat при входе
-    tick();
-
-    const interval = window.setInterval(tick, 45_000);
-    return () => {
-      stopped = true;
-      window.clearInterval(interval);
-    };
-  }, [editing, lock.status]);
-
-  useEffect(() => {
-  if (editing && lock.status === "locked") {
-    setEditing(false);
-  }
-}, [editing, lock.status]);
-
-
-
-  // release при выходе из edit и при размонтировании
-  useEffect(() => {
-    return () => {
-      // best-effort
-      fetch("/api/lock", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          resource: "chapter",
-          id: chapterId,
-          action: "release",
-          tabId,
-        }),
-      }).catch(() => {});
-    };
-  }, [chapterId, tabId]);
-
-    // pre-check: сразу показать, что интро занято (без захвата лока)
-  useEffect(() => {
-    if (!chapterId) return;
-    if (editing) return;
-
-    let cancelled = false;
-
-    const run = async () => {
-      const res = await fetch("/api/lock", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          resource: "chapter",
-          id: chapterId,
-          action: "status",
-          tabId,
-        }),
-      });
-
-      const payload = await res.json().catch(() => ({}));
-      if (cancelled) return;
-
-      if (payload?.locked) {
-        setLock({
-          status: "locked",
-          lockedBy: payload.lockedBy ?? { userId: "unknown", username: "someone" },
-        });
-      } else {
-        // если свободно — сбрасываем в idle (чтобы кнопка снова стала активной)
-        setLock({ status: "idle" });
-      }
-    };
-
-    run();
-    const interval = window.setInterval(run, 15_000); // можно 10–20с
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [chapterId, tabId, editing]);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [editing, handleSave]);
 
 
   // ────────────────────────────────────────────────────────────────────────────
@@ -387,44 +236,12 @@ async function handleCancel() {
           </p>
         )}
 
-{canEdit && (
-  <div className="mt-4 flex items-center gap-3">
-    <button
-      type="button"
-      disabled={lock.status === "locked"}
-      onClick={async () => {
-        // если уже знаем, что занято — не дергаем acquire
-        if (lock.status === "locked") return;
-
-        const ok = await lockCall("acquire_or_beat");
-        if (ok) setEditing(true);
-      }}
-      className="text-xs text-muted-foreground hover:text-foreground disabled:opacity-40"
-    >
-      Edit
-    </button>
-
-    {lock.status === "locked" && (
-<span className="inline-flex items-center gap-2 text-sm text-amber-300/90">
-<span className="h-8 w-8 overflow-hidden rounded-full border border-amber-500/30">
-{lock.lockedBy.avatarUrl ? (
-  <AvatarImg
-    src={lock.lockedBy.avatarUrl ?? undefined} // key only
-    alt=""
-    className="h-full w-full object-cover"
-  />
-) : (
-    <span className="flex h-full w-full items-center justify-center text-[10px] opacity-80">
-      {(lock.lockedBy.username ?? "U").slice(0, 1).toUpperCase()}
-    </span>
-  )}
-</span>
-  <span>сейчас редактирует</span>
-</span>
-
-    )}
-  </div>
-)}
+        <ChapterIntroViewActions
+          canEdit={canEdit}
+          onEdit={async () => {
+            setEditing(true);
+          }}
+        />
 
       </section>
     );
@@ -436,15 +253,7 @@ async function handleCancel() {
   // ────────────────────────────────────────────────────────────────────────────
   return (
     <section className="mt-4 space-y-3">
-            {lock.status === "locked" && (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-          Chapter is being edited by{" "}
-          <span className="font-medium">
-            @{lock.lockedBy.username ?? lock.lockedBy.userId}
-          </span>
-          . Try again later.
-        </div>
-      )}
+      <WriterStatusNotice message={saveError} />
       {/* шапка режима редактирования */}
       <div className="flex flex-col gap-1 text-xs">
         <span className="uppercase tracking-wide text-neutral-500">
@@ -459,7 +268,7 @@ async function handleCancel() {
           onChange={(e) => setTitle(e.target.value)}
           className="w-full rounded-md border border-neutral-700 bg-transparent px-3 py-2 text-base"
           placeholder="Chapter title…"
-          disabled={!canEdit || isPending || lock.status !== "mine"}
+          disabled={!canEdit || isPending}
 
         />
 
@@ -467,7 +276,7 @@ async function handleCancel() {
           <RichPostEditor
             value={content}
             onChange={setContent}
-            disabled={!canEdit || isPending || lock.status !== "mine"}
+            disabled={!canEdit || isPending}
             tone="light"
           />
         </div>
@@ -478,7 +287,7 @@ async function handleCancel() {
 <button
   type="button"
   onClick={handleSave}
-  disabled={!dirty || isPending || !canEdit || lock.status !== "mine"}
+  disabled={!dirty || isPending || !canEdit}
   className="hover:text-foreground disabled:opacity-50"
 >
 
@@ -494,19 +303,12 @@ async function handleCancel() {
             </button>
           </div>
 
-          <div className="flex items-center gap-3 text-[11px] text-right text-neutral-500">
-            <span>{statusLabel}</span>
-            {hasDraftState && (
-              <button
-                type="button"
-                onClick={discardLocalDraft}
-                disabled={isPending}
-                className="hover:text-foreground disabled:opacity-50"
-              >
-                reset
-              </button>
-            )}
-          </div>
+          <ChapterIntroDraftActions
+            statusLabel={statusLabel}
+            hasDraftState={hasDraftState}
+            onDiscardDraft={discardLocalDraft}
+            disabled={isPending}
+          />
         </div>
       </div>
     </section>

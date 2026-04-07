@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { requestPasswordReset } from "@/lib/authFlowClient";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -23,14 +24,9 @@ export default function ForgotPasswordPage() {
 
     setStatus("sending");
     try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: e1 }),
-      });
-      const payload = await res.json().catch(() => ({}));
+      const { ok, payload } = await requestPasswordReset(e1);
 
-      if (!res.ok) {
+      if (!ok) {
         if (payload?.error === "too_fast") setError("Please wait a bit and try again.");
         else setError("Failed to send code. Try again.");
         return;

@@ -1,13 +1,20 @@
 // src/app/page.tsx
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import Link from "next/link";
+import { getAuthSession } from "@/server/session";
 
 export const dynamic = "force-dynamic";
 
+type LandingSession = {
+  user?: {
+    name?: string | null;
+    username?: string | null;
+    email?: string | null;
+  } | null;
+} | null;
+
 export default async function HomePage() {
-  const session = await getServerSession(authOptions);
-  const user = (session as any)?.user;
+  const session = (await getAuthSession()) as LandingSession;
+  const user = session?.user ?? null;
 
   return (
     <main className="min-h-screen text-slate-100">
@@ -31,7 +38,7 @@ function GuestLanding() {
           Welcome to <span className="text-slate-50">403 Forbidden</span>
         </h1>
         <p className="max-w-xl text-slate-400">
-          Cyberpunk stories, collaborative books and long-form roleplay. 
+          Cyberpunk stories, collaborative arcs and long-form roleplay. 
           Read public threads, explore the world, and join the writers&apos; circle
           once you sign in.
         </p>
@@ -39,7 +46,7 @@ function GuestLanding() {
 
       <div className="flex flex-wrap gap-4">
         <Link
-          href="/api/auth/signin"
+          href="/login"
           className="rounded-full border border-slate-500 px-5 py-2 text-sm font-medium hover:border-slate-300 hover:text-slate-100"
         >
           Sign in / Sign up
@@ -62,14 +69,14 @@ function GuestLanding() {
         <div className="space-y-2">
           <p className="font-medium text-slate-200">No account yet?</p>
           <p>
-            You can still read public forums and featured books. 
+            You can still read public forums and featured arcs. 
             Sign in to create characters, post and collaborate.
           </p>
         </div>
         <div className="space-y-2">
           <p className="font-medium text-slate-200">Long-form stories</p>
           <p>
-            Books are split into chapters with comment threads, 
+            Arcs are split into chapters with comment threads, 
             turn queues and soft locks for co-writing.
           </p>
         </div>
@@ -86,7 +93,11 @@ function GuestLanding() {
 }
 
 // --- Блок для залогиненных юзеров ---
-function UserLanding({ user }: { user: any }) {
+function UserLanding({
+  user,
+}: {
+  user: { name?: string | null; username?: string | null; email?: string | null };
+}) {
   const fullName = user?.name || user?.username || user?.email || "user";
 
   return (

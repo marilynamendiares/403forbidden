@@ -1,4 +1,11 @@
 // src/app/GlobalBackground.tsx
+import {
+  mixBlendMultiply,
+  mixBlendNormal,
+  mixBlendOverlay,
+  mixBlendScreen,
+} from "@/lib/uiStyles";
+
 export default function GlobalBackground() {
   return (
     <>
@@ -166,7 +173,7 @@ export default function GlobalBackground() {
             fill="#000"
             filter="url(#bgGrainDarkSand)"
             opacity="0.24"
-            style={{ mixBlendMode: "multiply" as any }}
+            style={{ mixBlendMode: mixBlendMultiply }}
           />
 
           <rect
@@ -175,7 +182,7 @@ export default function GlobalBackground() {
             fill="#808080"
             filter="url(#bgGrainBase)"
             opacity="0.02"
-            style={{ mixBlendMode: "overlay" as any }}
+            style={{ mixBlendMode: mixBlendOverlay }}
           />
 
           <rect
@@ -184,7 +191,7 @@ export default function GlobalBackground() {
             fill="#fff"
             filter="url(#bgGrainBrightSparkles)"
             opacity="0.32"
-            style={{ mixBlendMode: "screen" as any }}
+            style={{ mixBlendMode: mixBlendScreen }}
           />
 
           <rect
@@ -193,7 +200,7 @@ export default function GlobalBackground() {
             fill="#fff"
             filter="url(#bgSaltSpecks)"
             opacity="0.62"
-            style={{ mixBlendMode: "normal" as any }}
+            style={{ mixBlendMode: mixBlendNormal }}
           />
 
           <rect
@@ -202,7 +209,7 @@ export default function GlobalBackground() {
             fill="#000"
             filter="url(#bgPepperSpecks)"
             opacity="0.32"
-            style={{ mixBlendMode: "normal" as any }}
+            style={{ mixBlendMode: mixBlendNormal }}
           />
         </svg>
 

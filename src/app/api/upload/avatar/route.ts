@@ -1,72 +1,52 @@
 // src/app/api/upload/avatar/route.ts
 export const runtime = "nodejs";
 
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { NextResponse } from "next/server";
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "@/server/db";
+import { requireSessionUserId } from "@/server/session";
+import { error, json } from "@/server/http";
+import { getR2Client, getR2Config, getR2Status } from "@/server/r2";
 
 const MAX_SIZE_BYTES = 500 * 1024; // 500KB
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-function getR2Client() {
-  const endpoint = process.env.R2_ENDPOINT;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-
-  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
-
-  return new S3Client({
-    region: process.env.R2_REGION ?? "auto",
-    endpoint,
-    credentials: { accessKeyId, secretAccessKey },
-    forcePathStyle: true,
-  });
-}
-
 export async function GET(req: Request) {
   const url = new URL(req.url);
   if (url.searchParams.get("__ping") !== "1") {
-    return new NextResponse("Not found", { status: 404 });
+    return error("Not found", 404);
   }
 
-  return NextResponse.json(
+  return json(
     {
       ok: true,
       route: "/api/upload/avatar",
-      hasEndpoint: Boolean(process.env.R2_ENDPOINT),
-      hasBucket: Boolean(process.env.R2_BUCKET),
-      hasKey: Boolean(process.env.R2_ACCESS_KEY_ID),
-      hasSecret: Boolean(process.env.R2_SECRET_ACCESS_KEY),
-      region: process.env.R2_REGION ?? "auto",
+      ...getR2Status(),
     },
     { headers: { "cache-control": "no-store" } }
   );
 }
 
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
+  let userId: string;
+  try {
+    userId = await requireSessionUserId();
+  } catch {
+    return error("Unauthorized", 401);
+  }
 
-  const userId =
-    ((session as any)?.user?.id as string | undefined) ??
-    ((session as any)?.userId as string | undefined);
-
-  if (!userId) return new NextResponse("Unauthorized", { status: 401 });
-
-  const bucket = process.env.R2_BUCKET;
+  const { bucket, endpoint, accessKeyId, secretAccessKey, region } = getR2Config();
   const s3 = getR2Client();
 
   if (!bucket || !s3) {
-    return NextResponse.json(
+    return json(
       {
         error: "r2_not_configured",
         hasBucket: Boolean(bucket),
-        hasEndpoint: Boolean(process.env.R2_ENDPOINT),
-        hasKey: Boolean(process.env.R2_ACCESS_KEY_ID),
-        hasSecret: Boolean(process.env.R2_SECRET_ACCESS_KEY),
-        region: process.env.R2_REGION ?? "auto",
+        hasEndpoint: Boolean(endpoint),
+        hasKey: Boolean(accessKeyId),
+        hasSecret: Boolean(secretAccessKey),
+        region,
       },
       { status: 500 }
     );
@@ -80,7 +60,7 @@ export async function POST(req: Request) {
   const ext = body?.ext;
 
   if (!contentType || !ALLOWED_TYPES.has(contentType)) {
-    return new NextResponse("Unsupported content-type", { status: 400 });
+    return error("Unsupported content-type", 400);
   }
 
   const safeExtRaw =
@@ -102,16 +82,14 @@ export async function POST(req: Request) {
         select: { id: true },
       });
     });
-  } catch (e: any) {
-    const msg = String(e?.message ?? "");
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    const msg = String(message ?? "");
     if (msg === "AVATAR_LIMIT_REACHED") {
-      return new NextResponse(
-        "Avatar limit reached (max 5). Delete one first.",
-        { status: 400 }
-      );
+      return error("Avatar limit reached (max 5). Delete one first.", 400);
     }
-    return NextResponse.json(
-      { error: "avatar_reserve_failed", message: String(e?.message ?? e) },
+    return json(
+      { error: "avatar_reserve_failed", message },
       { status: 500 }
     );
   }
@@ -127,17 +105,18 @@ export async function POST(req: Request) {
   try {
     const uploadUrl = await getSignedUrl(s3, command, { expiresIn: 60 });
 
-    return NextResponse.json({
+    return json({
       uploadUrl,
       key,
       maxBytes: MAX_SIZE_BYTES,
       allowed: Array.from(ALLOWED_TYPES),
     });
-  } catch (e: any) {
-    return NextResponse.json(
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : String(e);
+    return json(
       {
         error: "presign_failed",
-        message: String(e?.message ?? e),
+        message,
       },
       { status: 500 }
     );

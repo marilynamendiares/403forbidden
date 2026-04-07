@@ -40,7 +40,7 @@ export type ChapterDTO = {
   publishedAt: string | null;
   updatedAt: string;
   status: "OPEN" | "CLOSED" | null;
-  book: { id: string; slug: string; title: string; ownerId: string };
+  arc: { id: string; slug: string; title: string; ownerId: string };
   author: AuthorDTO & { email: string | null };
 };
 

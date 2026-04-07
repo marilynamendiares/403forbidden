@@ -1,77 +1,148 @@
 // src/app/forum/[category]/page.tsx
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { headers, cookies } from "next/headers";
-import { ssrFetch } from "@/server/ssrFetch";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { isPlayer } from "@/server/player";
 import { isAdminSession } from "@/server/admin";
-import { prisma } from "@/server/db";
+import { getSessionViewer, requireSessionUserId } from "@/server/session";
+import { getThreadsByCategory } from "@/server/repos/forum";
+import { createThreadForUser, ForumHttpError } from "@/server/services/forum";
+import { getForumCategoryCreateStateForViewer } from "@/server/services/forumCategories";
+import { timeAgo } from "@/lib/TimeAgo";
 
 export const dynamic = "force-dynamic";
 
-async function getThreads(category: string, cursor?: string) {
-  const h = await headers();
-  const origin =
-    h.get("origin") ??
-    `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+async function getThreads(category: string, cursor?: string, includeHidden?: boolean) {
+  const data = await getThreadsByCategory({
+    categorySlug: category,
+    take: 20,
+    cursorId: cursor,
+    includeHidden,
+  });
 
-  const url = new URL(`${origin}/api/forum/categories/${category}/threads`);
-  if (cursor) url.searchParams.set("cursor", cursor);
-
-const res = await ssrFetch(url);
-
-  if (!res.ok) return { items: [] as any[], nextCursor: null as string | null };
-  return res.json() as Promise<{ items: any[]; nextCursor: string | null }>;
+  return {
+    items: data.items as ThreadListItem[],
+    nextCursor: data.nextCursor,
+  };
 }
+
+type ThreadListItem = {
+  slug: string;
+  title: string;
+  createdAt: string | Date;
+  lastActivityAt?: string | Date;
+  updatedAt: string | Date;
+  locked?: boolean;
+  hiddenAt?: string | Date | null;
+  hiddenById?: string | null;
+  author?: {
+    username?: string | null;
+    profile?: {
+      displayName?: string | null;
+    } | null;
+  } | null;
+  _count: {
+    posts: number;
+  };
+};
 
 type PageProps = {
   params: Promise<{ category: string }>;
   searchParams: Promise<{ cursor?: string }>;
 };
 
+function ThreadList({
+  category,
+  items,
+  isAdmin,
+}: {
+  category: string;
+  items: ThreadListItem[];
+  isAdmin: boolean;
+}) {
+  if (items.length === 0) {
+    return <p className="opacity-60">No threads yet. Create the first one below.</p>;
+  }
+
+  return (
+    <ul className="grid gap-3">
+      {items.map((thread) => (
+        <li key={thread.slug} className="rounded-xl border border-neutral-800 p-4">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <Link
+                className="text-lg font-medium hover:underline"
+                href={`/forum/${category}/${thread.slug}`}
+              >
+                {thread.title}
+              </Link>
+              <p className="mt-1 text-xs opacity-60">
+                by {thread.author?.profile?.displayName
+                  ?? (thread.author?.username ? `@${thread.author.username}` : "user")}
+                {" · "}
+                {thread._count.posts} posts
+              </p>
+              {(thread.locked || (isAdmin && thread.hiddenAt)) ? (
+                <div className="mt-2 flex flex-wrap gap-2 text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+                  {thread.locked ? (
+                    <span className="rounded border border-white/10 px-2 py-1">Locked</span>
+                  ) : null}
+                  {isAdmin && thread.hiddenAt ? (
+                    <span className="rounded border border-white/10 px-2 py-1">
+                      Hidden
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="shrink-0 text-right text-xs opacity-60">
+              <div>Active {timeAgo(thread.lastActivityAt ?? thread.updatedAt)}</div>
+              {isAdmin && thread.hiddenAt ? (
+                <div className="mt-1 text-neutral-500">
+                  Hidden {new Date(thread.hiddenAt).toLocaleString()}
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function CategoryCreateState({
+  canCreateThread,
+  createHint,
+  category,
+}: {
+  canCreateThread: boolean;
+  createHint: string;
+  category: string;
+}) {
+  if (canCreateThread) {
+    return <CreateThreadForm category={category} />;
+  }
+
+  return <div className="rounded-xl border border-neutral-800 p-4 text-sm opacity-70">{createHint}</div>;
+}
+
+function rethrowForumActionError(action: string, error: unknown): never {
+  if (error instanceof ForumHttpError) {
+    throw new Error(`Failed to ${action} (${error.status}): ${error.message}`);
+  }
+  throw error;
+}
+
 export default async function CategoryPage({ params, searchParams }: PageProps) {
   const { category } = await params;           // Next 15: await
   const { cursor } = await searchParams;       // Next 15: await
-
-  const { items, nextCursor } = await getThreads(category, cursor);
-
-  // --- ACL: can current user create thread in this category? ---
-  const session = await getServerSession(authOptions);
-  const admin = isAdminSession(session as any);
-
-  const userId =
-    ((session as any)?.user?.id as string | undefined) ??
-    ((session as any)?.userId as string | undefined);
-
-  const player = userId ? await isPlayer(userId) : false;
-
-  const cat = await prisma.forumCategory.findUnique({
-    where: { slug: category },
-    select: { createThreadVisibility: true },
+  const { session, userId } = await getSessionViewer();
+  const admin = isAdminSession(session);
+  const { items, nextCursor } = await getThreads(category, cursor, admin);
+  const { canCreateThread, createHint } = await getForumCategoryCreateStateForViewer({
+    categorySlug: category,
+    userId,
+    isAdmin: admin,
   });
-
-  const createVis = (cat?.createThreadVisibility ?? "PLAYERS") as
-    | "PUBLIC"
-    | "MEMBERS"
-    | "PLAYERS"
-    | "ADMIN";
-
-  const canCreateThread =
-    admin ||
-    (createVis === "MEMBERS" && !!userId) ||
-    (createVis === "PUBLIC" && !!userId) || // guests всё равно не смогут (нет session)
-    (createVis === "PLAYERS" && player);
-
-  const createHint =
-    !userId
-      ? "Sign in to create threads."
-      : createVis === "ADMIN"
-        ? "Only admins can create threads here."
-        : createVis === "PLAYERS" && !player
-          ? "Create threads is available after character approval."
-          : "You can't create threads here.";
 
   return (
     <div className="space-y-6">
@@ -82,26 +153,7 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
         </Link>
       </div>
 
-      <ul className="grid gap-3">
-        {items.length === 0 && (
-          <p className="opacity-60">No threads yet. Create the first one below.</p>
-        )}
-        {items.map((t) => (
-          <li key={t.slug} className="border border-neutral-800 rounded-xl p-4">
-            <Link
-              className="text-lg font-medium hover:underline"
-              href={`/forum/${category}/${t.slug}`}
-            >
-              {t.title}
-            </Link>
-            <p className="opacity-60 text-xs mt-1">
-              by {t.author?.profile?.displayName
-                  ?? (t.author?.username ? `@${t.author.username}` : "user")}
-              {" · "}{t._count.posts} posts
-            </p>
-          </li>
-        ))}
-      </ul>
+      <ThreadList category={category} items={items} isAdmin={admin} />
 
       {nextCursor && (
         <div className="pt-2">
@@ -114,13 +166,11 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
         </div>
       )}
 
-            {canCreateThread ? (
-        <CreateThreadForm category={category} />
-      ) : (
-        <div className="border border-neutral-800 rounded-xl p-4 text-sm opacity-70">
-          {createHint}
-        </div>
-      )}
+      <CategoryCreateState
+        canCreateThread={canCreateThread}
+        createHint={createHint}
+        category={category}
+      />
     </div>
   );
 }
@@ -131,27 +181,21 @@ function CreateThreadForm({ category }: { category: string }) {
 
     const title = String(formData.get("title") || "");
     const content = String(formData.get("content") || "");
+    const { session } = await getSessionViewer();
+    const userId = await requireSessionUserId();
 
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ??
-      `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-    const res = await fetch(`${origin}/api/forum/categories/${category}/threads`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ title, content }),
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Failed to create thread (${res.status}): ${text}`);
+    try {
+      const data = await createThreadForUser({
+        category,
+        userId,
+        isAdmin: Boolean(isAdminSession(session)),
+        title,
+        content,
+      });
+      redirect(`/forum/${category}/${data.slug}`);
+    } catch (error) {
+      rethrowForumActionError("create thread", error);
     }
-
-    const data = await res.json(); // { id, slug }
-    redirect(`/forum/${category}/${data.slug}`);
   }
 
   return (

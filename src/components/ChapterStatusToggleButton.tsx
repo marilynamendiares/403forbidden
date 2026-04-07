@@ -3,17 +3,18 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { toggleChapterStatus } from "@/lib/chapterStatusClient";
 
 type Props = {
   canToggle: boolean;
-  bookSlug: string;
+  arcSlug: string;
   chapterId: string;
   status: "OPEN" | "CLOSED";
 };
 
 export function ChapterStatusToggleButton({
   canToggle,
-  bookSlug,
+  arcSlug,
   chapterId,
   status,
 }: Props) {
@@ -34,26 +35,14 @@ export function ChapterStatusToggleButton({
 
     startTransition(async () => {
       try {
-        const res = await fetch(
-          `/api/books/${encodeURIComponent(
-            bookSlug
-          )}/chapters/${encodeURIComponent(chapterId)}/${nextAction}`,
-          {
-            method: "POST",
-          }
-        );
-
-        if (!res.ok) {
-          const data = await res
-            .json()
-            .catch(() => ({ error: "Failed to toggle chapter status" }));
-          setError(data.error ?? "Failed to toggle chapter status");
-        } else {
-          // Обновляем страницу главы (SSR-данные подтянутся заново)
-          router.refresh();
-        }
-      } catch (e) {
-        console.error(e);
+        await toggleChapterStatus({
+          arcSlug,
+          chapterId,
+          action: nextAction,
+        });
+        router.refresh();
+      } catch (error) {
+        console.error(error);
         setError("Network error while toggling chapter status");
       }
     });
@@ -68,7 +57,7 @@ export function ChapterStatusToggleButton({
         title={
           canToggle
             ? label
-            : "Only the book owner or editor can change chapter status"
+            : "Only the arc owner or editor can change chapter status"
         }
         className={[
           "rounded-xl border px-3 py-2 text-sm transition",

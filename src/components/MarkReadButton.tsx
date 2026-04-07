@@ -2,7 +2,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { notifyUnread } from "@/lib/notifyUnread";
+import {
+  markNotificationRead,
+} from "@/lib/notificationActions";
+import {
+  notificationsReadAllEventName,
+} from "@/lib/notificationUnreadEvents";
 
 export function MarkReadButton({ id }: { id: string }) {
   const [loading, setLoading] = useState(false);
@@ -10,22 +15,16 @@ export function MarkReadButton({ id }: { id: string }) {
 
   useEffect(() => {
     const onAll = () => setDone(true);
-    window.addEventListener("notifications:read_all", onAll);
-    return () => window.removeEventListener("notifications:read_all", onAll);
+    window.addEventListener(notificationsReadAllEventName, onAll);
+    return () => window.removeEventListener(notificationsReadAllEventName, onAll);
   }, []);
 
   const markOne = async () => {
     if (loading || done) return;
     setLoading(true);
     try {
-      const res = await fetch("/api/notifications", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ op: "mark-one", id }),
-      });
-      if (res.ok) {
-        const { unread } = await res.json().catch(() => ({ unread: undefined }));
-        if (typeof unread === "number") notifyUnread({ op: "set", count: unread });
+      const result = await markNotificationRead(id);
+      if (result.ok) {
         setDone(true); // скрываем кнопку сразу
       }
     } finally {

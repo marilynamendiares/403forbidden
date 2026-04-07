@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { requestPasswordReset, resetPasswordWithCode } from "@/lib/authFlowClient";
 
 export default function ResetPasswordPage() {
   return (
@@ -39,14 +40,9 @@ function ResetPasswordPageInner() {
 
     setStatus("resending");
     try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const payload = await res.json().catch(() => ({}));
+      const { ok, payload } = await requestPasswordReset(email);
 
-      if (!res.ok) {
+      if (!ok) {
         if (payload?.error === "too_fast") setError("Please wait a bit before resending.");
         else setError("Failed to resend. Try again.");
         return;
@@ -86,14 +82,13 @@ function ResetPasswordPageInner() {
 
     setStatus("saving");
     try {
-      const res = await fetch("/api/auth/reset-password", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, code: c, newPassword }),
+      const { ok, payload } = await resetPasswordWithCode({
+        email,
+        code: c,
+        newPassword,
       });
-      const payload = await res.json().catch(() => ({}));
 
-      if (!res.ok) {
+      if (!ok) {
         const key = payload?.error ?? "reset_failed";
         if (key === "code_expired") setError("Code expired. Please resend.");
         else if (key === "too_many_tries") setError("Too many attempts. Please resend.");

@@ -1,31 +1,21 @@
 // src/app/api/notifications/route.ts
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import {
-  getUnreadCount,
   listNotificationsForUser,
   applyNotificationOp,
 } from "@/server/services/notifications";
+import { getSessionViewer } from "@/server/session";
+import { error, json } from "@/server/http";
 
 // GET /api/notifications
-// ?unread=1            -> { count }
 // ?limit=&cursor=      -> { items, nextCursor }
 export async function GET(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
+  const { userId } = await getSessionViewer();
   if (!userId) {
-    // для списка/ленты: просто пустой результат
-    return NextResponse.json({ items: [], nextCursor: null });
+    return json({ items: [], nextCursor: null });
   }
 
   const { searchParams } = new URL(req.url);
-
-  // счётчик непрочитанных
-  if (searchParams.get("unread")) {
-    const count = await getUnreadCount(userId);
-    return NextResponse.json({ count });
-  }
 
   const limit = Math.min(Number(searchParams.get("limit") ?? 20), 50);
   const cursor = searchParams.get("cursor") || null;
@@ -36,16 +26,15 @@ export async function GET(req: NextRequest) {
     cursor,
   });
 
-  return NextResponse.json({ items, nextCursor });
+  return json({ items, nextCursor });
 }
 
 // POST /api/notifications
 // { op: "mark-one", id } | { op: "mark-all" } | { op: "clear-all" }
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = (session as any)?.userId as string | undefined;
+  const { userId } = await getSessionViewer();
   if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return error("Unauthorized", 401);
   }
 
   const body = (await req.json().catch(() => null)) as
@@ -55,14 +44,14 @@ export async function POST(req: NextRequest) {
     | null;
 
   if (!body || !("op" in body)) {
-    return NextResponse.json({ error: "Bad Request" }, { status: 400 });
+    return error("Bad Request", 400);
   }
 
   try {
     const { unread } = await applyNotificationOp(userId, body);
-    return NextResponse.json({ ok: true, unread }, { status: 200 });
+    return json({ ok: true, unread }, { status: 200 });
   } catch (e) {
     console.error("Failed to apply notification op", e);
-    return NextResponse.json({ error: "Internal error" }, { status: 500 });
+    return error("Internal error", 500);
   }
 }

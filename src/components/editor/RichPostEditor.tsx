@@ -4,6 +4,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { richPostExtensions } from "@/lib/richEditorConfig";
+import { uploadEditorImage } from "@/lib/imageUploadClient";
 import {
   Bold,
   Italic,
@@ -111,30 +112,6 @@ export function RichPostEditor({ value, onChange, disabled, tone = "dark" }: Pro
     }
   };
 
-  async function uploadImageFile(file: File): Promise<string> {
-    const form = new FormData();
-    form.append("file", file);
-
-    const res = await fetch("/api/uploads/images", {
-      method: "POST",
-      body: form,
-    });
-
-    const json = await res.json().catch(() => null);
-    if (!res.ok) {
-      const message =
-        (json && typeof json.message === "string" && json.message) ||
-        (json && typeof json.error === "string" && json.error) ||
-        `Upload failed (${res.status})`;
-      throw new Error(message);
-    }
-
-    if (!json || typeof json.url !== "string" || !json.url.trim()) {
-      throw new Error("Upload returned invalid URL");
-    }
-
-    return json.url;
-  }
   // если хочешь file-upload вместо prompt:
   const handleInsertImageFromFile = () => {
     fileInputRef.current?.click();
@@ -145,7 +122,7 @@ export function RichPostEditor({ value, onChange, disabled, tone = "dark" }: Pro
     if (!file) return;
 
     try {
-      const url = await uploadImageFile(file);
+      const url = await uploadEditorImage(file);
       editor.chain().focus().setImage({ src: url, alt: file.name }).run();
     } catch (error) {
       console.error("Image upload failed", error);

@@ -1,59 +1,18 @@
 // src/app/api/shop/route.ts
 export const runtime = "nodejs";
 
-import type { NextRequest } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
-import { prisma } from "@/server/db";
+import { requireSessionUserId } from "@/server/session";
+import { error, json } from "@/server/http";
+import { getShopForUser } from "@/server/services/shop";
 
-export async function GET(_req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const me =
-    (session?.user?.id as string | undefined) ??
-    ((session as any)?.userId as string | undefined);
+export async function GET() {
+  let me: string;
+  try {
+    me = await requireSessionUserId();
+  } catch {
+    return error("Unauthorized", 401);
+  }
 
-  if (!me) return new Response("Unauthorized", { status: 401 });
-
-  const wallet = await prisma.wallet.upsert({
-    where: { userId: me },
-    create: { userId: me },
-    update: {},
-    select: { eurodollars: true, reputationTotal: true },
-  });
-
-  const items = await prisma.shopItem.findMany({
-    where: { isActive: true },
-    orderBy: [{ requiredReputation: "asc" }, { priceEurodollars: "asc" }],
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      description: true,
-      category: true,
-      priceEurodollars: true,
-      requiredReputation: true,
-    },
-  });
-
-  const owned = await prisma.inventoryItem.findMany({
-    where: { userId: me },
-    select: { itemId: true },
-  });
-  const ownedSet = new Set(owned.map((x) => x.itemId));
-
-  const decorated = items.map((it) => {
-    const alreadyOwned = ownedSet.has(it.id);
-    const hasFunds = wallet.eurodollars >= it.priceEurodollars;
-    const hasRep = wallet.reputationTotal >= it.requiredReputation;
-
-    return {
-      ...it,
-      alreadyOwned,
-      canBuy: !alreadyOwned && hasFunds && hasRep,
-      lockedByFunds: !hasFunds,
-      lockedByReputation: !hasRep,
-    };
-  });
-
-  return Response.json({ ok: true, wallet, items: decorated }, { status: 200 });
+  const { wallet, items } = await getShopForUser(me);
+  return json({ ok: true, wallet, items }, { status: 200 });
 }

@@ -1,8 +1,9 @@
 // src/app/api/uploads/images/route.ts
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/server/auth";
 import type { NextRequest } from "next/server";
-import { S3Client, GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import { requireSessionUserId } from "@/server/session";
+import { json, noContent } from "@/server/http";
+import { getR2Client, getR2Config, getR2Status } from "@/server/r2";
 
 const MAX_SIZE_BYTES = 8 * 1024 * 1024;
 const ALLOWED_TYPES = new Set([
@@ -15,31 +16,6 @@ const ALLOWED_TYPES = new Set([
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function getSessionUserId(session: unknown): string | undefined {
-  if (!session || typeof session !== "object") return undefined;
-  const candidate = session as {
-    user?: { id?: string };
-    userId?: string;
-  };
-
-  return candidate.user?.id ?? candidate.userId;
-}
-
-function getR2Client() {
-  const endpoint = process.env.R2_ENDPOINT;
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-
-  if (!endpoint || !accessKeyId || !secretAccessKey) return null;
-
-  return new S3Client({
-    region: process.env.R2_REGION ?? "auto",
-    endpoint,
-    credentials: { accessKeyId, secretAccessKey },
-    forcePathStyle: true,
-  });
-}
 
 async function toWebStream(body: unknown): Promise<ReadableStream<Uint8Array>> {
   if (!body) throw new Error("Empty body");
@@ -66,26 +42,21 @@ export async function GET(req: NextRequest) {
   // DEBUG PING
   if (req.nextUrl.searchParams.get("__ping") === "1") {
     if (process.env.NODE_ENV === "production") {
-      return new Response(JSON.stringify({ ok: true }), {
+      return json({ ok: true }, {
         status: 200,
         headers: { "content-type": "application/json", "cache-control": "no-store" },
       });
     }
 
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         ok: true,
         route: "/api/uploads/images",
-        hasBucket: !!process.env.R2_BUCKET,
-        hasEndpoint: !!process.env.R2_ENDPOINT,
-        hasKey: !!process.env.R2_ACCESS_KEY_ID,
-        hasSecret: !!process.env.R2_SECRET_ACCESS_KEY,
-        region: process.env.R2_REGION ?? "auto",
-      }),
+        ...getR2Status(),
+      },
       {
         status: 200,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
           "x-uploads-images": "ping-v2",
         },
@@ -97,24 +68,22 @@ export async function GET(req: NextRequest) {
   const key = raw.replace(/^\/+/, "");
 
   if (!key) {
-    return new Response(JSON.stringify({ error: "missing_key" }), {
+    return json({ error: "missing_key" }, {
       status: 400,
       headers: {
-        "content-type": "application/json",
         "cache-control": "no-store",
         "x-uploads-images": "missing_key",
       },
     });
   }
 
-  const bucket = process.env.R2_BUCKET;
+  const { bucket } = getR2Config();
   const s3 = getR2Client();
 
   if (!bucket || !s3) {
-    return new Response(JSON.stringify({ error: "r2_not_configured" }), {
+    return json({ error: "r2_not_configured" }, {
       status: 500,
       headers: {
-        "content-type": "application/json",
         "cache-control": "no-store",
         "x-uploads-images": "r2_not_configured",
       },
@@ -152,12 +121,11 @@ export async function GET(req: NextRequest) {
       code.includes("NoSuchKey") ||
       code.includes("NotFound");
 
-    return new Response(
-      JSON.stringify({ error: isNotFound ? "not_found" : "fetch_failed" }),
+    return json(
+      { error: isNotFound ? "not_found" : "fetch_failed" },
       {
         status: isNotFound ? 404 : 502,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
           "x-uploads-images": isNotFound
             ? "not_found-v2"
@@ -169,27 +137,25 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getServerSession(authOptions);
-  const userId = getSessionUserId(session);
-
-  if (!userId) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
+  let userId: string;
+  try {
+    userId = await requireSessionUserId();
+  } catch {
+    return json({ error: "unauthorized" }, {
       status: 401,
       headers: {
-        "content-type": "application/json",
         "cache-control": "no-store",
       },
     });
   }
 
-  const bucket = process.env.R2_BUCKET;
+  const { bucket } = getR2Config();
   const s3 = getR2Client();
 
   if (!bucket || !s3) {
-    return new Response(JSON.stringify({ error: "r2_not_configured" }), {
+    return json({ error: "r2_not_configured" }, {
       status: 500,
       headers: {
-        "content-type": "application/json",
         "cache-control": "no-store",
       },
     });
@@ -198,25 +164,23 @@ export async function POST(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return new Response(JSON.stringify({ error: "missing_file" }), {
+    return json({ error: "missing_file" }, {
       status: 400,
       headers: {
-        "content-type": "application/json",
         "cache-control": "no-store",
       },
     });
   }
 
   if (!ALLOWED_TYPES.has(file.type)) {
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         error: "unsupported_type",
         allowed: Array.from(ALLOWED_TYPES),
-      }),
+      },
       {
         status: 400,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
         },
       }
@@ -224,15 +188,14 @@ export async function POST(req: NextRequest) {
   }
 
   if (file.size > MAX_SIZE_BYTES) {
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         error: "file_too_large",
         maxBytes: MAX_SIZE_BYTES,
-      }),
+      },
       {
         status: 400,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
         },
       }
@@ -276,31 +239,29 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         ok: true,
         key,
         url: `/api/uploads/images?key=${encodeURIComponent(key)}`,
-      }),
+      },
       {
         status: 201,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
         },
       }
     );
   } catch (e: unknown) {
     const err = e as { message?: string };
-    return new Response(
-      JSON.stringify({
+    return json(
+      {
         error: "upload_failed",
         message: String(err?.message ?? e),
-      }),
+      },
       {
         status: 502,
         headers: {
-          "content-type": "application/json",
           "cache-control": "no-store",
         },
       }
@@ -311,8 +272,7 @@ export async function POST(req: NextRequest) {
 // 👇 ДОБАВЛЯЕМ ЭТО В КОНЕЦ ФАЙЛА
 
 export async function OPTIONS() {
-  return new Response(null, {
-    status: 204,
+  return noContent({
     headers: {
       Allow: "GET, POST, HEAD, OPTIONS",
       "x-uploads-images": "options-v2",

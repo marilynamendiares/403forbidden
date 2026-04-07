@@ -7,6 +7,24 @@ import bcrypt from "bcrypt";
 import { prisma } from "./db";
 import { coerceMediaKey } from "@/lib/media";
 
+type AppUserStatus = "ACTIVE" | "BANNED" | "DELETED";
+
+function createSessionUser(user: {
+  id: string;
+  email: string;
+  username: string;
+  displayName: string | null;
+  avatarKey: string | null;
+}) {
+  return {
+    id: user.id,
+    email: user.email,
+    name: user.displayName ?? user.username ?? null,
+    image: user.avatarKey,
+    username: user.username,
+  };
+}
+
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
   adapter: PrismaAdapter(prisma),
@@ -59,13 +77,13 @@ export const authOptions: NextAuthOptions = {
         // ✅ ВАЖНО: в auth/jwt/session держим ТОЛЬКО key (или null)
         const avatarKey = coerceMediaKey(user.profile?.avatarUrl) ?? null;
 
-        return {
+        return createSessionUser({
           id: user.id,
           email: user.email,
-          name: user.profile?.displayName ?? user.username ?? null,
-          image: avatarKey, // ← key
-          username: user.username as any,
-        };
+          username: user.username,
+          displayName: user.profile?.displayName ?? null,
+          avatarKey,
+        });
       },
     }),
   ],
@@ -74,25 +92,24 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       // При первом входе user присутствует — допишем данные в токен
       if (user) {
-        token.uid = (user as any).id;
-        token.username = (user as any).username ?? null;
-        token.displayName = (user as any).name ?? null;
+        token.uid = user.id;
+        token.username = user.username ?? null;
+        token.displayName = user.name ?? null;
 
         // ✅ в токене держим key, не URL
-        token.avatarUrl = coerceMediaKey((user as any).image ?? null);
+        token.avatarUrl = coerceMediaKey(user.image ?? null);
 
-        (token as any).userStatus = "ACTIVE";
-        (token as any).statusCheckedAt = Date.now();
+        token.userStatus = "ACTIVE";
+        token.statusCheckedAt = Date.now();
         return token;
       }
 
       // Periodic status re-check (no spam): once per 10 minutes
-      const lastCheck = (token as any).statusCheckedAt as number | undefined;
+      const lastCheck = token.statusCheckedAt;
       const shouldCheck = !lastCheck || Date.now() - lastCheck > 10 * 60 * 1000;
 
       if (shouldCheck) {
-        const uid =
-          (token?.sub as string | undefined) ?? ((token as any).uid as string | undefined);
+        const uid = token.sub ?? token.uid;
 
         if (uid) {
           const u = await prisma.user.findUnique({
@@ -100,8 +117,8 @@ export const authOptions: NextAuthOptions = {
             select: { status: true },
           });
 
-          (token as any).userStatus = u?.status ?? "DELETED";
-          (token as any).statusCheckedAt = Date.now();
+          token.userStatus = (u?.status ?? "DELETED") as AppUserStatus;
+          token.statusCheckedAt = Date.now();
         }
       }
 
@@ -109,26 +126,27 @@ export const authOptions: NextAuthOptions = {
     },
 
     async session({ session, token }) {
-      if (!session.user) session.user = {} as any;
-
-      const uid =
-        (token?.sub as string | undefined) ?? (token?.uid as string | undefined) ?? null;
-
-      if (uid) {
-        (session.user as any).id = uid;
-        (session as any).userId = uid;
+      if (!session.user) {
+        session.user = { id: "" };
       }
 
-      (session.user as any).username = (token as any).username ?? null;
+      const uid = token.sub ?? token.uid ?? null;
+
+      if (uid) {
+        session.user.id = uid;
+        session.userId = uid;
+      }
+
+      session.user.username = token.username ?? null;
       session.user.name =
-        ((token as any).displayName as string | null) ?? session.user.name ?? null;
+        token.displayName ?? session.user.name ?? null;
 
       // ✅ В сессии тоже key (UI сам резолвит)
-      session.user.image = coerceMediaKey(((token as any).avatarUrl as string | null) ?? null);
+      session.user.image = coerceMediaKey(token.avatarUrl ?? null);
 
       // If user was soft-deleted/banned after login, drop session
-      const st = (token as any).userStatus as string | undefined;
-      if (st && st !== "ACTIVE") return null as any;
+      const st = token.userStatus;
+      if (st && st !== "ACTIVE") return null as never;
 
       return session;
     },

@@ -5,6 +5,8 @@ export type AppEventType =
   // forum
   | "thread:new_post"
   | "thread:post_deleted"
+  | "thread:post_hidden"
+  | "thread:post_unhidden"
   // chapters
   | "chapter:created"
   | "chapter:updated"

@@ -4,39 +4,57 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChapterPostItem } from "./ChapterPostItem";
 import { useEventStream } from "@/features/realtime/client/useEventStream";
+import {
+  fetchChapterPostPage,
+  type ChapterPostListItem,
+} from "@/lib/chapterPostsClient";
 
-type Author = {
-  id: string;
-  username: string;
-  avatarUrl: string | null;
+type Item = ChapterPostListItem;
+
+type NewPostEvent = {
+  slug: string;
+  index: number | string;
+  post: Item;
 };
 
-type Item = {
-  id: string;
-  contentMd: string;
-  createdAt: string;
+type UpdatedPostEvent = {
+  slug: string;
+  index: number | string;
+  postId: string;
+  contentMd?: string;
   editedAt?: string | null;
-  author: Author;
+};
+
+type DeletedPostEvent = {
+  slug: string;
+  index: number | string;
+  postId: string;
 };
 
 type Props = {
   slug: string;
   index: number | string;
   currentUserId?: string | null;
+  initialItems?: Item[];
+  initialNextCursor?: string | null;
+  optimisticPost?: Item | null;
 };
 
 export function ChapterPostList({
   slug,
   index,
   currentUserId,
+  initialItems = [],
+  initialNextCursor = null,
+  optimisticPost = null,
 }: Props) {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const [items, setItems] = useState<Item[]>([]);
-  const [cursor, setCursor] = useState<string | null>(null);
+  const [items, setItems] = useState<Item[]>(initialItems);
+  const [cursor, setCursor] = useState<string | null>(initialNextCursor);
   const [loading, setLoading] = useState(false);
-  const [reachedEnd, setReachedEnd] = useState(false);
+  const [reachedEnd, setReachedEnd] = useState(initialNextCursor === null);
 
-  const baseUrl = useMemo(() => `/api/books/${slug}/${index}/posts`, [slug, index]);
+  const baseUrl = useMemo(() => `/api/arcs/${slug}/${index}/posts`, [slug, index]);
 
   const dedupe = useCallback((arr: Item[]) => {
     const seen = new Set<string>();
@@ -54,32 +72,31 @@ export function ChapterPostList({
     if (loading || reachedEnd) return;
     setLoading(true);
     const url = cursor ? `${baseUrl}?cursor=${encodeURIComponent(cursor)}` : baseUrl;
-    const res = await fetch(url, { cache: "no-store", credentials: "include" });
-    setLoading(false);
-    if (!res.ok) return;
-    const json = (await res.json().catch(() => null)) as
-      | { items: Item[]; nextCursor?: string | null }
-      | null;
-    if (!json) return;
-    setItems((prev) => dedupe([...prev, ...json.items]));
-    if (json.nextCursor) {
-      setCursor(json.nextCursor);
-    } else {
-      setReachedEnd(true);
+    try {
+      const json = await fetchChapterPostPage(url);
+      if (!json) return;
+      setItems((prev) => dedupe([...prev, ...json.items]));
+      if (json.nextCursor) {
+        setCursor(json.nextCursor);
+      } else {
+        setReachedEnd(true);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [baseUrl, cursor, loading, reachedEnd, dedupe]);
 
   // reset при смене главы
   useEffect(() => {
-    setItems([]);
-    setCursor(null);
-    setReachedEnd(false);
-  }, [slug, index]);
+    setItems(initialItems);
+    setCursor(initialNextCursor);
+    setReachedEnd(initialNextCursor === null);
+  }, [slug, index, initialItems, initialNextCursor]);
 
-  // первая загрузка
   useEffect(() => {
-    void fetchPage();
-  }, [fetchPage]);
+    if (!optimisticPost) return;
+    setItems((prev) => dedupe([...prev, optimisticPost]));
+  }, [dedupe, optimisticPost]);
 
   // локальные апдейты после edit/delete (из дочернего элемента)
   function handleAfterChange(
@@ -102,20 +119,21 @@ export function ChapterPostList({
 
   // 🔴 LIVE: SSE-подписки
   useEventStream({
-    "chapter:new_post": (e: any) => {
+    "chapter:new_post": (e) => {
+      const payload = e as NewPostEvent | null;
       // ожидаем payload вида: { slug, index, post: { id, contentMd, createdAt, author{...} } }
-      if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.post) return;
+      if (!payload || payload.slug !== slug || String(payload.index) !== String(index) || !payload.post) return;
 
       const el = rootRef.current;
       const shouldStick =
         !!el && el.scrollHeight - el.scrollTop - el.clientHeight < 200;
 
       const it: Item = {
-        id: e.post.id,
-        contentMd: e.post.contentMd,
-        createdAt: e.post.createdAt,
+        id: payload.post.id,
+        contentMd: payload.post.contentMd,
+        createdAt: payload.post.createdAt,
         editedAt: null,
-        author: e.post.author,
+        author: payload.post.author,
       };
 
       setItems((prev) => {
@@ -131,25 +149,27 @@ export function ChapterPostList({
       }
     },
 
-    "chapter:post_updated": (e: any) => {
-      if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.postId) return;
+    "chapter:post_updated": (e) => {
+      const payload = e as UpdatedPostEvent | null;
+      if (!payload || payload.slug !== slug || String(payload.index) !== String(index) || !payload.postId) return;
       setItems((prev) => {
-        const i = prev.findIndex((p) => p.id === e.postId);
+        const i = prev.findIndex((p) => p.id === payload.postId);
         if (i === -1) return prev;
         const cp = prev.slice();
         cp[i] = {
           ...cp[i],
-          ...(typeof e.contentMd === "string" ? { contentMd: e.contentMd } : {}),
-          editedAt: e.editedAt ?? new Date().toISOString(),
+          ...(typeof payload.contentMd === "string" ? { contentMd: payload.contentMd } : {}),
+          editedAt: payload.editedAt ?? new Date().toISOString(),
         };
         return cp;
       });
     },
 
-    "chapter:post_deleted": (e: any) => {
+    "chapter:post_deleted": (e) => {
+      const payload = e as DeletedPostEvent | null;
       // payload: { slug, index, postId }
-      if (!e || e.slug !== slug || String(e.index) !== String(index) || !e.postId) return;
-      setItems((prev) => prev.filter((p) => p.id !== e.postId));
+      if (!payload || payload.slug !== slug || String(payload.index) !== String(index) || !payload.postId) return;
+      setItems((prev) => prev.filter((p) => p.id !== payload.postId));
     },
   });
 

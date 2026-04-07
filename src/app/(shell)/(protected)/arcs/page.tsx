@@ -1,88 +1,56 @@
-import Link from "next/link";
-import { headers, cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import ShellVariantSetter from "@/app/shell/ShellVariant";
-import BooksLiveClient from "@/components/BooksLiveClient";
-import CollapsibleSection from "@/components/CollapsibleSection";
+import ShellSurfaceSetter from "@/app/shell/ShellSurface";
+import ShellScrollModeSetter from "@/app/shell/ShellScrollMode";
+import ArcsLiveClient from "@/components/ArcsLiveClient";
+import ArcsDiscoveryClient from "@/components/arcs/ArcsDiscoveryClient";
+import { getViewerId } from "@/server/authViewer";
+import { getArcsCatalog, getArcsDiscovery } from "@/server/repos/arcs";
+import { isPlayer } from "@/server/player";
+import { requireSessionUserId } from "@/server/session";
+import { createArc } from "@/server/services/arcs";
 
 export const dynamic = "force-dynamic";
 
-async function fetchBooks() {
-  const h = await headers();
-  const origin =
-    h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-  const res = await fetch(`${origin}/api/books`, { cache: "no-store" });
-  return res.ok ? res.json() : [];
-}
-
-export default async function BooksPage() {
-  const books = await fetchBooks();
+export default async function ArcsPage() {
+  const viewerId = await getViewerId();
+  const canCreateArc = await isPlayer(viewerId);
+  const [initialDiscovery, initialCatalog] = await Promise.all([
+    getArcsDiscovery(viewerId),
+    getArcsCatalog({ viewerId, sort: "recent", limit: 12 }),
+  ]);
 
   async function create(formData: FormData) {
     "use server";
     const title = String(formData.get("title") || "");
     const tagline = String(formData.get("tagline") || "");
-
-    const cookie = (await cookies()).toString();
-    const h = await headers();
-    const origin =
-      h.get("origin") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-
-    const res = await fetch(`${origin}/api/books`, {
-      method: "POST",
-      headers: { "content-type": "application/json", cookie },
-      body: JSON.stringify({ title, tagline }),
-      cache: "no-store",
-    });
-
-    if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      throw new Error(`Failed to create book (${res.status}): ${txt}`);
+    const userId = await requireSessionUserId();
+    if (!(await isPlayer(userId))) {
+      throw new Error("PLAYER_REQUIRED");
     }
 
-    const data = await res.json(); // { slug }
-    redirect(`/arcs/${data.slug}`);
+    const created = await createArc({
+      userId,
+      title,
+      tagline: tagline || null,
+    });
+    redirect(`/arcs/${created.slug}`);
   }
 
   return (
     <>
+      <ShellScrollModeSetter mode="split" />
       <ShellVariantSetter variant="full" />
+      <ShellSurfaceSetter surface="light" />
 
-      <div className="space-y-6">
-        <h1 className="header-font-archimoto text-[15px] leading-none uppercase">Arcs</h1>
-
-        <ul className="grid gap-3">
-          {books.length === 0 && <p className="opacity-60">No books yet.</p>}
-          {books.map((b: any) => (
-            <li key={b.slug} className="border border-neutral-800 rounded-xl p-4">
-              <Link className="text-lg font-medium hover:underline" href={`/arcs/${b.slug}`}>
-                {b.title}
-              </Link>
-              <p className="opacity-60 text-xs mt-1">{b.status.toLowerCase()}</p>
-            </li>
-          ))}
-        </ul>
-
-        <CollapsibleSection label="Create a book">
-          <form action={create} className="space-y-2">
-            {/* заголовок внутри уже не нужен, кнопка — это заголовок секции */}
-            <input
-              name="title"
-              placeholder="Title"
-              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-              required
-            />
-            <input
-              name="tagline"
-              placeholder="Tagline (optional)"
-              className="w-full rounded bg-transparent border border-neutral-700 px-3 py-2"
-            />
-            <button className="rounded bg-white text-black px-4 py-2">Create</button>
-            <p className="opacity-60 text-xs">Requires sign-in.</p>
-          </form>
-        </CollapsibleSection>
-        <BooksLiveClient />
+      <div className="flex h-full min-h-0 w-full flex-col text-[#2D2D2D]">
+        <ArcsDiscoveryClient
+          initialDiscovery={initialDiscovery}
+          initialCatalog={initialCatalog}
+          createAction={create}
+          canCreateArc={canCreateArc}
+        />
+        <ArcsLiveClient />
       </div>
     </>
   );

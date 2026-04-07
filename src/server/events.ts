@@ -6,10 +6,8 @@ import Redis from "ioredis";
 type Client = { id: string; write: (chunk: string) => void; close: () => void };
 
 declare global {
-  // eslint-disable-next-line no-var
   var __SSE_CLIENTS__: Map<string, Client> | undefined;
 
-  // eslint-disable-next-line no-var
   var __PUBSUB_REDIS__: Redis | undefined;
 }
 
@@ -66,7 +64,9 @@ function sseFrame(event: string, data: unknown, id?: string) {
  */
 export async function emit(event: string, payload: unknown) {
   const now = Date.now();
-  const data = { type: event, ts: now, ...((payload as any) ?? {}) };
+  const payloadObject =
+    payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const data = { type: event, ts: now, ...payloadObject };
 
   // 1) In-memory fanout (текущий инстанс)
   const msg = sseFrame(event, data);
