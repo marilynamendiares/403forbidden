@@ -5,9 +5,11 @@ import { readLocalStorage, writeLocalStorage } from "@/lib/browserStorage";
 
 type ShellUIState = {
   sidebarOpen: boolean;
+  shellActive: boolean;
   brandHover: boolean;
   restored: boolean;
   setSidebarOpen: (v: boolean) => void;
+  setShellActive: (v: boolean) => void;
   setBrandHover: (v: boolean) => void;
   toggleSidebar: () => void;
   openSidebar: () => void;
@@ -21,6 +23,7 @@ const LS_KEY = "403.shell.sidebarOpen";
 
 export function ShellUIProvider({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [shellActive, setShellActive] = useState(false);
   const [brandHover, setBrandHover] = useState(false);
   const [restored, setRestored] = useState(false);
 
@@ -31,6 +34,10 @@ useEffect(() => {
 useEffect(() => {
   document.documentElement.dataset.brandHover = brandHover ? "1" : "0";
 }, [brandHover]);
+
+useEffect(() => {
+  document.documentElement.dataset.shellActive = shellActive ? "1" : "0";
+}, [shellActive]);
 
   // restore
   useEffect(() => {
@@ -53,15 +60,17 @@ useEffect(() => {
   const value = useMemo<ShellUIState>(() => {
     return {
       sidebarOpen,
+      shellActive,
       brandHover,
       restored,
       setSidebarOpen,
+      setShellActive,
       setBrandHover,
       toggleSidebar: () => setSidebarOpen((v) => !v),
       openSidebar: () => setSidebarOpen(true),
       closeSidebar: () => setSidebarOpen(false),
     };
-  }, [brandHover, restored, sidebarOpen]);
+  }, [brandHover, restored, shellActive, sidebarOpen]);
 
   return <ShellUIContext.Provider value={value}>{children}</ShellUIContext.Provider>;
 }

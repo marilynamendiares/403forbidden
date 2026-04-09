@@ -41,7 +41,7 @@ export default function ShellFrame({ topBar, children }: Props) {
   const { mode: scrollMode } = useShellScrollMode();
   const { variant } = useShellVariant();
   const { surface } = useShellSurface();
-  const { sidebarOpen, brandHover, restored, closeSidebar, openSidebar } = useShellUI();
+  const { sidebarOpen, brandHover, restored, closeSidebar, openSidebar, setShellActive } = useShellUI();
   const [leftRailPx, setLeftRailPx] = useState(0);
   const [panelReady, setPanelReady] = useState(false);
 
@@ -63,6 +63,11 @@ export default function ShellFrame({ topBar, children }: Props) {
     window.addEventListener("resize", recalcLeftRail);
     return () => window.removeEventListener("resize", recalcLeftRail);
   }, []);
+
+  useEffect(() => {
+    setShellActive(true);
+    return () => setShellActive(false);
+  }, [setShellActive]);
 
   useEffect(() => {
     if (!restored) return;
@@ -97,7 +102,7 @@ export default function ShellFrame({ topBar, children }: Props) {
 
 {/* LEFT PEEK (keep geometry, brand moved to GlobalBrand) */}
 <aside
-  className="relative z-10 min-h-screen overflow-hidden"
+  className="relative z-10 min-h-screen overflow-hidden pointer-events-none"
   style={{
     width: "var(--left-peek-open)",
     maxWidth: "var(--rail-max)",

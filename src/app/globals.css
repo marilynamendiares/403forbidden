@@ -76,22 +76,23 @@
 }
 
 /* когда sidebar открыт — “рассеивать” по порогу */
-html[data-sidebar-open="1"] .global-brand {
+html[data-shell-active="1"][data-sidebar-open="1"] .global-brand {
   opacity: var(--fade-alpha);
   transform: translateX(calc(var(--fade-inv) * -18px));
   filter: blur(calc(var(--fade-inv) * 6px));
 }
 
 /* когда sidebar закрыт — бренд всегда 1 */
+html:not([data-shell-active="1"]) .global-brand,
 html:not([data-sidebar-open="1"]) .global-brand {
   opacity: 1;
   transform: none;
   filter: none;
 }
 
-html[data-sidebar-open="1"] .global-brand:hover,
-html[data-sidebar-open="1"] .global-brand:focus-within,
-html[data-sidebar-open="1"][data-brand-hover="1"] .global-brand {
+html[data-shell-active="1"][data-sidebar-open="1"] .global-brand:hover,
+html[data-shell-active="1"][data-sidebar-open="1"] .global-brand:focus-within,
+html[data-shell-active="1"][data-sidebar-open="1"][data-brand-hover="1"] .global-brand {
   opacity: 1;
   transform: none;
   filter: none;

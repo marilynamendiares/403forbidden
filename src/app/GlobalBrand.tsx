@@ -7,7 +7,7 @@ import BrandMark from "@/app/BrandMark";
 import { useShellUI } from "@/app/shell/ShellUIContext";
 
 export default function GlobalBrand() {
-  const { sidebarOpen, setBrandHover } = useShellUI();
+  const { sidebarOpen, shellActive, setBrandHover } = useShellUI();
   const buildId = process.env.NEXT_PUBLIC_BUILD_ID ?? "dev";
   const terminalLines = useMemo(
     () => [
@@ -50,7 +50,7 @@ export default function GlobalBrand() {
 
   return (
     <>
-      {sidebarOpen ? (
+      {shellActive && sidebarOpen ? (
         <div
           className="fixed top-0 pointer-events-none"
           style={{
@@ -74,7 +74,7 @@ export default function GlobalBrand() {
         className="fixed top-0 pointer-events-none global-brand"
         style={{
           left: "calc((100vw - min(100vw, 1920px)) / 2)",
-          zIndex: 5,
+          zIndex: shellActive && sidebarOpen ? 5 : 15,
         }}
       >
         <div
