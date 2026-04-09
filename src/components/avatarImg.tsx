@@ -9,7 +9,7 @@ type Props = Omit<React.ImgHTMLAttributes<HTMLImageElement>, "src"> & {
 };
 
 
-export default function AvatarImg({ src, fallback = "/default-avatar.svg", ...props }: Props) {
+export default function AvatarImg({ src, fallback = "/default-avatar.jpg", ...props }: Props) {
   const resolved = resolveMediaUrl(src) ?? fallback;
 
   // eslint-disable-next-line @next/next/no-img-element

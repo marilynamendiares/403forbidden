@@ -14,7 +14,7 @@ export default function UserBadge({
   displayName?: string | null;
   size?: number;
 }) {
-  const a = resolveMediaUrl(avatar) || "/default-avatar.svg";
+  const a = resolveMediaUrl(avatar) || "/default-avatar.jpg";
 
   return (
     <a href={href} className="inline-flex items-center gap-2 group">

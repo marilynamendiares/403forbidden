@@ -10,7 +10,7 @@ export default function GlobalBackground() {
   return (
     <>
       {/* WORLD BASE */}
-      <div aria-hidden="true" className="fixed inset-0" style={{ backgroundColor: "#000", zIndex: 0 }} />
+      <div aria-hidden="true" className="fixed inset-0" style={{ backgroundColor: "#111111", zIndex: 0 }} />
 
       {/* ARTBOARD BASE */}
       <div
@@ -19,7 +19,7 @@ export default function GlobalBackground() {
         style={{
           transform: "translateX(-50%)",
           width: "min(100vw, 1920px)",
-          backgroundColor: "#151515",
+          backgroundColor: "#1c1c1c",
           zIndex: 1,
         }}
       />

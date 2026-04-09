@@ -8,8 +8,24 @@ import { requireSessionUserId } from "@/server/session";
 import { error, json } from "@/server/http";
 import { getR2Client, getR2Config, getR2Status } from "@/server/r2";
 
-const MAX_SIZE_BYTES = 500 * 1024; // 500KB
-const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const DEFAULT_MAX_SIZE_BYTES = 500 * 1024; // 500KB
+const GIF_MAX_SIZE_BYTES = 1536 * 1024; // 1.5MB
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+function extFromContentType(contentType: string) {
+  switch (contentType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "jpg";
+  }
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -63,9 +79,12 @@ export async function POST(req: Request) {
     return error("Unsupported content-type", 400);
   }
 
-  const safeExtRaw =
-    (ext ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "jpg";
-  const safeExt = safeExtRaw === "jpeg" ? "jpg" : safeExtRaw;
+  const maxBytes = contentType === "image/gif" ? GIF_MAX_SIZE_BYTES : DEFAULT_MAX_SIZE_BYTES;
+
+  const safeExtRaw = (ext ?? "").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5);
+  const safeExt = safeExtRaw === extFromContentType(contentType)
+    ? safeExtRaw
+    : extFromContentType(contentType);
 
   const key = `avatars/${userId}/${Date.now()}.${safeExt}`;
 
@@ -108,7 +127,7 @@ export async function POST(req: Request) {
     return json({
       uploadUrl,
       key,
-      maxBytes: MAX_SIZE_BYTES,
+      maxBytes,
       allowed: Array.from(ALLOWED_TYPES),
     });
   } catch (e: unknown) {

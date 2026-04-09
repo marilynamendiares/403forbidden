@@ -54,7 +54,7 @@ function AvatarLibraryItem({
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={resolveMediaUrl(avatar.key) || "/default-avatar.svg"}
+          src={resolveMediaUrl(avatar.key) || "/default-avatar.jpg"}
           alt="avatar"
           className="h-full w-full object-cover"
         />
@@ -293,7 +293,7 @@ export default function ProfileSettingsPage() {
               <div className="h-24 w-24 rounded-full overflow-hidden ring-1 ring-black/10 bg-neutral-800 shrink-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                  src={avatarPreview || currentAvatarSrc || "/default-avatar.svg"}
+                  src={avatarPreview || currentAvatarSrc || "/default-avatar.jpg"}
                   alt="avatar preview"
                   className="h-full w-full object-cover"
                 />
@@ -310,7 +310,7 @@ export default function ProfileSettingsPage() {
                 <input
                   id="avatar"
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
                   className="sr-only"
                   onChange={(e) => {
                     const f = e.currentTarget.files?.[0] ?? null;
@@ -338,7 +338,7 @@ export default function ProfileSettingsPage() {
                 />
 
                 <span className="text-xs opacity-70">{fileName}</span>
-                <p className="text-xs opacity-70">PNG/JPEG/WebP, up to 500 KB</p>
+                <p className="text-xs opacity-70">PNG/JPEG/WebP up to 500 KB, GIF up to 1.5 MB</p>
               </div>
             </div>
 

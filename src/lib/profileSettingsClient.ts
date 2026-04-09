@@ -10,13 +10,16 @@ export type AvatarItem = {
 export function validateAvatarFile(nextFile: File | null) {
   if (!nextFile) return null;
 
-  const maxBytes = 500 * 1024;
+  const isGif = nextFile.type === "image/gif";
+  const maxBytes = isGif ? 1536 * 1024 : 500 * 1024;
   if (nextFile.size > maxBytes) {
-    return "Avatar is too large. Max size is 500 KB.";
+    return isGif
+      ? "GIF avatar is too large. Max size is 1.5 MB."
+      : "Avatar is too large. Max size is 500 KB.";
   }
 
-  if (!/^image\/(png|jpeg|webp)$/.test(nextFile.type)) {
-    return "Unsupported image type. Use PNG, JPG, or WebP.";
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(nextFile.type)) {
+    return "Unsupported image type. Use PNG, JPG, WebP, or GIF.";
   }
 
   return null;

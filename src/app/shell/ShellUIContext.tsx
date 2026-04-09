@@ -28,6 +28,10 @@ useEffect(() => {
   document.documentElement.dataset.sidebarOpen = sidebarOpen ? "1" : "0";
 }, [sidebarOpen]);
 
+useEffect(() => {
+  document.documentElement.dataset.brandHover = brandHover ? "1" : "0";
+}, [brandHover]);
+
   // restore
   useEffect(() => {
     try {

@@ -108,7 +108,7 @@ export default function ShellFrame({ topBar, children }: Props) {
 <section
   data-shell-panel
   className={[
-    "absolute top-0 right-0 z-20 h-screen",
+    "absolute top-0 right-0 z-30 h-screen",
     "flex flex-col",
     "will-change-transform transition-transform duration-450 ease-out",
     "border-l border-white/10",
