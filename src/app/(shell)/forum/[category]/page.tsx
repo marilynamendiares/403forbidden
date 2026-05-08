@@ -5,7 +5,13 @@ import { isAdminSession } from "@/server/admin";
 import { getSessionViewer, requireSessionUserId } from "@/server/session";
 import { getThreadsByCategory } from "@/server/repos/forum";
 import { createThreadForUser, ForumHttpError } from "@/server/services/forum";
-import { getForumCategoryCreateStateForViewer } from "@/server/services/forumCategories";
+import {
+  canReadForumCategory,
+  getForumCategoryAccessCopy,
+  getForumCategoryCreateStateForViewer,
+  getForumCategoryTier,
+} from "@/server/services/forumCategories";
+import { prisma } from "@/server/db";
 import { timeAgo } from "@/lib/TimeAgo";
 
 export const dynamic = "force-dynamic";
@@ -65,11 +71,22 @@ function ThreadList({
   return (
     <ul className="grid gap-3">
       {items.map((thread) => (
-        <li key={thread.slug} className="rounded-xl border border-neutral-800 p-4">
+        <li
+          key={thread.slug}
+          className={[
+            "rounded-xl border p-4",
+            thread.locked
+              ? "border-neutral-900 bg-neutral-950/25 opacity-80"
+              : "border-neutral-800",
+          ].join(" ")}
+        >
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <Link
-                className="text-lg font-medium hover:underline"
+                className={[
+                  "text-lg font-medium",
+                  thread.locked ? "text-neutral-300" : "hover:underline",
+                ].join(" ")}
                 href={`/forum/${category}/${thread.slug}`}
               >
                 {thread.title}
@@ -109,6 +126,49 @@ function ThreadList({
   );
 }
 
+function LockedCategoryScreen({
+  category,
+  title,
+  description,
+  actionHref,
+  actionLabel,
+}: {
+  category: string;
+  title: string;
+  description: string;
+  actionHref: string | null;
+  actionLabel: string | null;
+}) {
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">{category}</h1>
+        <Link className="text-sm opacity-70 hover:underline" href="/forum">
+          ← All categories
+        </Link>
+      </div>
+
+      <section className="rounded-xl border border-neutral-900 bg-neutral-950/35 p-5">
+        <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+          Access denied
+        </div>
+        <h2 className="mt-2 text-xl font-semibold text-neutral-100">{title}</h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">
+          {description}
+        </p>
+        {actionHref && actionLabel ? (
+          <Link
+            href={actionHref}
+            className="mt-4 inline-flex rounded-md border border-neutral-700 px-3 py-2 text-sm hover:border-neutral-500 hover:bg-neutral-900"
+          >
+            {actionLabel}
+          </Link>
+        ) : null}
+      </section>
+    </div>
+  );
+}
+
 function CategoryCreateState({
   canCreateThread,
   createHint,
@@ -137,6 +197,30 @@ export default async function CategoryPage({ params, searchParams }: PageProps) 
   const { cursor } = await searchParams;       // Next 15: await
   const { session, userId } = await getSessionViewer();
   const admin = isAdminSession(session);
+  const tier = await getForumCategoryTier({ userId, isAdmin: admin });
+  const categoryPolicy = await prisma.forumCategory.findUnique({
+    where: { slug: category },
+    select: { readVisibility: true },
+  });
+  const readVisibility = (categoryPolicy?.readVisibility ?? "MEMBERS") as
+    | "PUBLIC"
+    | "MEMBERS"
+    | "PLAYERS";
+  const canReadCategory = canReadForumCategory({ tier, readVisibility });
+
+  if (!canReadCategory) {
+    const access = getForumCategoryAccessCopy({ userId, readVisibility });
+    return (
+      <LockedCategoryScreen
+        category={category}
+        title={access.title}
+        description={access.description}
+        actionHref={access.actionHref}
+        actionLabel={access.actionLabel}
+      />
+    );
+  }
+
   const { items, nextCursor } = await getThreads(category, cursor, admin);
   const { canCreateThread, createHint } = await getForumCategoryCreateStateForViewer({
     categorySlug: category,

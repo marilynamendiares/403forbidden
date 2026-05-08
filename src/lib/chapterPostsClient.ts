@@ -5,6 +5,7 @@ import { fetchJson } from "@/lib/apiClient";
 type Author = {
   id: string;
   username: string | null;
+  displayName: string | null;
   avatarUrl: string | null;
 };
 
@@ -14,6 +15,11 @@ export type ChapterPostListItem = {
   createdAt: string;
   editedAt?: string | null;
   author: Author;
+  character: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  } | null;
 };
 
 export type ChapterPostPageResponse = {

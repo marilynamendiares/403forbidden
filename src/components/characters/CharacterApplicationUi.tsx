@@ -7,6 +7,7 @@ type FormValue = {
   age: string;
   gender: string;
   occupation: string;
+  visualRefUrl: string;
   appearance: string;
   personality: string;
   background: string;
@@ -17,6 +18,8 @@ type FormChangeHandlers = {
   onAgeChange: (value: string) => void;
   onGenderChange: (value: string) => void;
   onOccupationChange: (value: string) => void;
+  onVisualRefUpload: (file: File) => void;
+  onVisualRefRemove: () => void;
   onAppearanceChange: (value: string) => void;
   onPersonalityChange: (value: string) => void;
   onBackgroundChange: (value: string) => void;
@@ -105,10 +108,12 @@ export function CharacterApplicationForm({
   value,
   handlers,
   disabled,
+  visualRefBusy = false,
 }: {
   value: FormValue;
   handlers: FormChangeHandlers;
   disabled?: boolean;
+  visualRefBusy?: boolean;
 }) {
   return (
     <div className="space-y-5">
@@ -144,6 +149,57 @@ export function CharacterApplicationForm({
           disabled={disabled}
           placeholder="e.g. Fixer / Runner"
         />
+      </div>
+
+      <div>
+        <FieldLabel>Visual ref</FieldLabel>
+        <div className="grid gap-3 rounded-md border border-neutral-800 p-3 sm:grid-cols-[148px_1fr]">
+          <div className="flex aspect-[3/4] items-center justify-center overflow-hidden rounded-md border border-neutral-900 bg-neutral-950/40 text-center text-xs opacity-70">
+            {value.visualRefUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={value.visualRefUrl}
+                alt="Character visual reference"
+                className="h-full w-full object-cover"
+              />
+            ) : (
+              <span className="px-3">No visual reference uploaded.</span>
+            )}
+          </div>
+
+          <div className="flex flex-col justify-between gap-3">
+            <p className="text-xs leading-5 opacity-70">
+              Upload a reference image for the character appearance. This supports the written appearance section, it does not replace it.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="inline-flex cursor-pointer items-center rounded-md border border-neutral-800 px-3 py-2 text-xs hover:bg-neutral-900 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-50">
+                {visualRefBusy ? "Uploading..." : "Upload image"}
+                <input
+                  className="sr-only"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,image/avif"
+                  disabled={disabled || visualRefBusy}
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (file) handlers.onVisualRefUpload(file);
+                  }}
+                />
+              </label>
+
+              {value.visualRefUrl ? (
+                <button
+                  type="button"
+                  onClick={handlers.onVisualRefRemove}
+                  disabled={disabled || visualRefBusy}
+                  className="rounded-md border border-neutral-800 px-3 py-2 text-xs hover:bg-neutral-900 disabled:opacity-50"
+                >
+                  Remove image
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
       </div>
 
       <TextAreaField
@@ -228,6 +284,20 @@ export function CharacterApplicationReadonlyDetails({
         <ReadonlyField label="Gender" value={form?.gender ?? null} />
         <ReadonlyField label="Occupation" value={form?.occupation ?? null} fullWidth />
       </div>
+
+      {form?.visualRefUrl ? (
+        <div>
+          <div className="mb-1 text-xs opacity-60">Visual ref</div>
+          <div className="max-w-[220px] overflow-hidden rounded-md border border-neutral-900 bg-neutral-950/30">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={form.visualRefUrl}
+              alt="Character visual reference"
+              className="aspect-[3/4] w-full object-cover"
+            />
+          </div>
+        </div>
+      ) : null}
 
       <ReadonlyBlock label="Appearance" value={form?.appearance} />
       <ReadonlyBlock label="Personality" value={form?.personality} />

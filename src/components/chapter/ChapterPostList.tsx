@@ -134,6 +134,7 @@ export function ChapterPostList({
         createdAt: payload.post.createdAt,
         editedAt: null,
         author: payload.post.author,
+        character: payload.post.character ?? null,
       };
 
       setItems((prev) => {
@@ -184,6 +185,7 @@ return (
     <ChapterPostItem
       post={it}
       author={it.author}
+      character={it.character}
       currentUserId={currentUserId ?? null}
       slug={slug}
       index={index}

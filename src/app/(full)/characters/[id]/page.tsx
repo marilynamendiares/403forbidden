@@ -3,6 +3,9 @@
 
 import { use, useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { clearDraft, readDraft, writeDraft } from "@/lib/draftStorage";
+import { getWriterSaveErrorMessage, getWriterStatusLabel } from "@/lib/writerStatus";
+import { uploadEditorImage } from "@/lib/imageUploadClient";
 import {
   buildCharacterFormPayload,
   isEditableCharacterStatus,
@@ -16,8 +19,20 @@ import {
   CharacterApplicationForm,
   CharacterApplicationModeratorNote,
 } from "@/components/characters/CharacterApplicationUi";
+import { WriterStatusNotice } from "@/components/writer/WriterStatusNotice";
 
 type Props = { params: Promise<{ id: string }> };
+
+type CharacterApplicationLocalDraft = {
+  name?: string;
+  age?: string;
+  gender?: string;
+  occupation?: string;
+  visualRefUrl?: string;
+  appearance?: string;
+  personality?: string;
+  background?: string;
+};
 
 export default function CharacterEditPage({ params }: Props) {
   const router = useRouter();
@@ -31,32 +46,145 @@ export default function CharacterEditPage({ params }: Props) {
   const [age, setAge] = useState<string>(""); // empty string = not set
   const [gender, setGender] = useState("");
   const [occupation, setOccupation] = useState("");
+  const [visualRefUrl, setVisualRefUrl] = useState("");
   const [appearance, setAppearance] = useState("");
   const [personality, setPersonality] = useState("");
   const [background, setBackground] = useState("");
 
   const [error, setError] = useState("");
   const [hint, setHint] = useState<string>("");
+  const [baseline, setBaseline] = useState<CharacterApplicationLocalDraft | null>(null);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+  const [visualRefBusy, setVisualRefBusy] = useState(false);
 
   const [isPending, startTransition] = useTransition();
 
   const editable = useMemo(() => isEditableCharacterStatus(item?.status), [item?.status]);
+  const draftKey = useMemo(() => `character_application_draft:${id}`, [id]);
+  const currentDraft = useMemo(
+    () => ({
+      name,
+      age,
+      gender,
+      occupation,
+      visualRefUrl,
+      appearance,
+      personality,
+      background,
+    }),
+    [name, age, gender, occupation, visualRefUrl, appearance, personality, background]
+  );
+  const dirty = useMemo(() => {
+    if (!baseline) return false;
+    return JSON.stringify(currentDraft) !== JSON.stringify(baseline);
+  }, [baseline, currentDraft]);
+  const hasDraftState = draftRestored || dirty || saveState === "saving" || saveState === "saved";
+  const statusLabel = getWriterStatusLabel({
+    draftRestored,
+    hasDraftState,
+    saveState,
+    dirty,
+  });
 
   useEffect(() => {
     if (!item) return;
 
-    setName(item.name ?? "");
-
     const form = item.form ?? {};
-    if (form.age === null || form.age === undefined) setAge("");
-    else setAge(String(form.age));
+    const nextBaseline = {
+      name: item.name ?? "",
+      age: form.age === null || form.age === undefined ? "" : String(form.age),
+      gender: form.gender ?? "",
+      occupation: form.occupation ?? "",
+      visualRefUrl: form.visualRefUrl ?? "",
+      appearance: form.appearance ?? "",
+      personality: form.personality ?? "",
+      background: form.background ?? "",
+    };
 
-    setGender(form.gender ?? "");
-    setOccupation(form.occupation ?? "");
-    setAppearance(form.appearance ?? "");
-    setPersonality(form.personality ?? "");
-    setBackground(form.background ?? "");
-  }, [item]);
+    setBaseline(nextBaseline);
+
+    const parsed = editable ? readDraft<CharacterApplicationLocalDraft>(draftKey) : null;
+    const hasLocalDraft =
+      parsed &&
+      Object.values(parsed).some((value) => typeof value === "string" && value.trim().length > 0) &&
+      JSON.stringify(parsed) !== JSON.stringify(nextBaseline);
+
+    const source = hasLocalDraft ? { ...nextBaseline, ...parsed } : nextBaseline;
+
+    setName(source.name ?? "");
+    setAge(source.age ?? "");
+    setGender(source.gender ?? "");
+    setOccupation(source.occupation ?? "");
+    setVisualRefUrl(source.visualRefUrl ?? "");
+    setAppearance(source.appearance ?? "");
+    setPersonality(source.personality ?? "");
+    setBackground(source.background ?? "");
+    setDraftRestored(Boolean(hasLocalDraft));
+    setSaveState(hasLocalDraft ? "saved" : "idle");
+    setError("");
+  }, [item, editable, draftKey]);
+
+  useEffect(() => {
+    if (!editable || !baseline) return;
+
+    if (!dirty) {
+      clearDraft(draftKey);
+      setDraftRestored(false);
+      setSaveState("idle");
+      return;
+    }
+
+    setSaveState("saving");
+
+    const timeout = window.setTimeout(() => {
+      if (writeDraft(draftKey, currentDraft)) {
+        setSaveState("saved");
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timeout);
+  }, [editable, baseline, dirty, draftKey, currentDraft]);
+
+  function discardLocalDraft() {
+    if (!baseline) return;
+    clearDraft(draftKey);
+    setName(baseline.name ?? "");
+    setAge(baseline.age ?? "");
+    setGender(baseline.gender ?? "");
+    setOccupation(baseline.occupation ?? "");
+    setVisualRefUrl(baseline.visualRefUrl ?? "");
+    setAppearance(baseline.appearance ?? "");
+    setPersonality(baseline.personality ?? "");
+    setBackground(baseline.background ?? "");
+    setDraftRestored(false);
+    setSaveState("idle");
+    setError("");
+  }
+
+  async function uploadVisualRef(file: File) {
+    if (!editable || isPending || visualRefBusy) return;
+
+    setError("");
+    setHint("");
+    setVisualRefBusy(true);
+
+    try {
+      const url = await uploadEditorImage(file);
+      setVisualRefUrl(url);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setVisualRefBusy(false);
+    }
+  }
+
+  function removeVisualRef() {
+    if (!editable || isPending || visualRefBusy) return;
+    setVisualRefUrl("");
+    setError("");
+    setHint("");
+  }
 
   async function save() {
     if (!item || !editable || isPending) return;
@@ -67,6 +195,7 @@ export default function CharacterEditPage({ params }: Props) {
       age,
       gender,
       occupation,
+      visualRefUrl,
       appearance,
       personality,
       background,
@@ -82,10 +211,15 @@ export default function CharacterEditPage({ params }: Props) {
           name: name.trim(),
           form: formResult.form,
         });
+        clearDraft(draftKey);
+        setDraftRestored(false);
+        setSaveState("idle");
+        setBaseline(currentDraft);
         setHint("Saved.");
         await refresh();
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Save failed");
+        const message = e instanceof Error ? e.message : "Save failed";
+        setError(getWriterSaveErrorMessage(message, "character application"));
         return;
       }
     });
@@ -101,10 +235,16 @@ export default function CharacterEditPage({ params }: Props) {
       return;
     }
 
+    if (!visualRefUrl.trim()) {
+      setError("Visual ref is required before submitting the character application.");
+      return;
+    }
+
     const formResult = buildCharacterFormPayload({
       age,
       gender,
       occupation,
+      visualRefUrl,
       appearance,
       personality,
       background,
@@ -115,18 +255,22 @@ export default function CharacterEditPage({ params }: Props) {
     }
 
     startTransition(async () => {
-      // optional: save latest before submit (без доп. UX)
-      await updateCharacterApplication(id, {
+      try {
+        await updateCharacterApplication(id, {
           name: name.trim(),
           form: formResult.form,
-      }).catch(() => {});
+        });
 
-      try {
         await submitCharacterApplication(id);
+        clearDraft(draftKey);
+        setDraftRestored(false);
+        setSaveState("idle");
+        setBaseline(currentDraft);
         setHint("Submitted.");
         await refresh();
       } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Submit failed");
+        const message = e instanceof Error ? e.message : "Submit failed";
+        setError(getWriterSaveErrorMessage(message, "character application"));
         return;
       }
     });
@@ -160,6 +304,7 @@ export default function CharacterEditPage({ params }: Props) {
             age,
             gender,
             occupation,
+            visualRefUrl,
             appearance,
             personality,
             background,
@@ -169,11 +314,14 @@ export default function CharacterEditPage({ params }: Props) {
             onAgeChange: setAge,
             onGenderChange: setGender,
             onOccupationChange: setOccupation,
+            onVisualRefUpload: uploadVisualRef,
+            onVisualRefRemove: removeVisualRef,
             onAppearanceChange: setAppearance,
             onPersonalityChange: setPersonality,
             onBackgroundChange: setBackground,
           }}
           disabled={!editable || isPending}
+          visualRefBusy={visualRefBusy}
         />
 
         <div className="flex items-center justify-between gap-3 pt-1">
@@ -201,11 +349,25 @@ export default function CharacterEditPage({ params }: Props) {
               <span className="opacity-60">Locked (cannot edit in this status)</span>
             ) : hint ? (
               <span className="text-emerald-300">{hint}</span>
+            ) : hasDraftState ? (
+              <span className="opacity-60">{statusLabel}</span>
             ) : null}
           </div>
         </div>
 
-        {error && <p className="text-sm text-rose-400">{error}</p>}
+        {editable && hasDraftState ? (
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={discardLocalDraft}
+              className="text-xs opacity-60 hover:opacity-100"
+            >
+              discard local draft
+            </button>
+          </div>
+        ) : null}
+
+        <WriterStatusNotice message={error || null} />
       </div>
     </div>
   );

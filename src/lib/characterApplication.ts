@@ -9,6 +9,7 @@ export type CharacterForm = {
   age?: number | null;
   gender?: string;
   occupation?: string;
+  visualRefUrl?: string;
   appearance?: string;
   personality?: string;
   background?: string;
@@ -47,6 +48,7 @@ type CharacterFormFieldsInput = {
   age: string;
   gender: string;
   occupation: string;
+  visualRefUrl: string;
   appearance: string;
   personality: string;
   background: string;
@@ -66,6 +68,7 @@ export function buildCharacterFormPayload(
       age: ageCheck.value,
       gender: fields.gender.trim(),
       occupation: fields.occupation.trim(),
+      visualRefUrl: fields.visualRefUrl.trim(),
       appearance: fields.appearance.trim(),
       personality: fields.personality.trim(),
       background: fields.background.trim(),

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { ShellScrollModeProvider } from "./ShellScrollMode";
 import { ShellVariantProvider } from "./ShellVariantContext";
 import { ShellSurfaceProvider } from "./ShellSurface";
+import { ShellRightRailProvider } from "./ShellRightRailContext";
 import { useShellUI } from "./ShellUIContext";
 
 function ShellAutoOpenBehavior() {
@@ -28,7 +29,9 @@ export default function ShellProviders({ children }: { children: React.ReactNode
       <ShellAutoOpenBehavior />
       <ShellVariantProvider>
         <ShellSurfaceProvider>
-          <ShellScrollModeProvider>{children}</ShellScrollModeProvider>
+          <ShellScrollModeProvider>
+            <ShellRightRailProvider>{children}</ShellRightRailProvider>
+          </ShellScrollModeProvider>
         </ShellSurfaceProvider>
       </ShellVariantProvider>
     </>

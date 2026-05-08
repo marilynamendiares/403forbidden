@@ -2,8 +2,11 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RichPostEditor } from "@/components/editor/RichPostEditor";
+import { clearDraft, readDraft, writeDraft } from "@/lib/draftStorage";
+import { getWriterSaveErrorMessage, getWriterStatusLabel } from "@/lib/writerStatus";
+import { WriterStatusNotice } from "@/components/writer/WriterStatusNotice";
 import {
   createChapterPost,
   type ChapterPostListItem,
@@ -31,6 +34,66 @@ export function ChapterComposer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved">("idle");
+
+  const draftKey = useMemo(
+    () => `chapter_post_composer_draft:${slug}:${index}`,
+    [slug, index]
+  );
+
+  const dirty = val.trim().length > 0;
+  const hasDraftState = draftRestored || dirty || saveState === "saving" || saveState === "saved";
+  const statusLabel = getWriterStatusLabel({
+    draftRestored,
+    hasDraftState,
+    saveState,
+    dirty,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+
+    const parsed = readDraft<{ content?: string }>(draftKey);
+    if (!parsed || typeof parsed.content !== "string" || parsed.content.trim().length === 0) {
+      setDraftRestored(false);
+      return;
+    }
+
+    setVal(parsed.content);
+    setDraftRestored(true);
+    setSaveState("saved");
+    setError(null);
+  }, [open, draftKey]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (!dirty) {
+      clearDraft(draftKey);
+      setDraftRestored(false);
+      setSaveState("idle");
+      return;
+    }
+
+    setSaveState("saving");
+
+    const timeout = window.setTimeout(() => {
+      if (writeDraft(draftKey, { content: val })) {
+        setSaveState("saved");
+      }
+    }, 400);
+
+    return () => window.clearTimeout(timeout);
+  }, [open, dirty, draftKey, val]);
+
+  function discardLocalDraft() {
+    clearDraft(draftKey);
+    setVal("");
+    setDraftRestored(false);
+    setSaveState("idle");
+    setError(null);
+  }
 
   /**
    * Пост считается валидным если:
@@ -76,10 +139,13 @@ export function ChapterComposer({
       }
 
       // Успех → очищаем редактор. SSE подхватит новый пост сам.
+      clearDraft(draftKey);
       setVal("");
+      setDraftRestored(false);
+      setSaveState("idle");
       setOpen(false);
     } catch (err: unknown) {
-      setError(getErrorMessage(err));
+      setError(getWriterSaveErrorMessage(getErrorMessage(err), "chapter post"));
     } finally {
       setBusy(false);
     }
@@ -124,15 +190,29 @@ export function ChapterComposer({
             tone="light"
           />
 
-          <div className="flex items-center justify-between text-sm">
-            {error && <span className="text-red-500">{error}</span>}
-            <button
-              type="submit"
-              className="rounded-md border border-neutral-700 px-3 py-1 text-[#2D2D2D] hover:bg-[#2D2D2D]/5 disabled:opacity-50"
-              disabled={cannotPost}
-            >
-              {busy ? "Posting…" : "Post"}
-            </button>
+          <div className="space-y-2">
+            <WriterStatusNotice message={error} />
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <div className="flex items-center gap-3 text-xs text-neutral-500">
+                {hasDraftState ? <span>{statusLabel}</span> : null}
+                {hasDraftState ? (
+                  <button
+                    type="button"
+                    onClick={discardLocalDraft}
+                    className="hover:text-[#2D2D2D]"
+                  >
+                    discard local draft
+                  </button>
+                ) : null}
+              </div>
+              <button
+                type="submit"
+                className="rounded-md border border-neutral-700 px-3 py-1 text-[#2D2D2D] hover:bg-[#2D2D2D]/5 disabled:opacity-50"
+                disabled={cannotPost}
+              >
+                {busy ? "Posting…" : "Post"}
+              </button>
+            </div>
           </div>
         </form>
       )}

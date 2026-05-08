@@ -11,7 +11,7 @@ import {
 import { drainOutbox } from "@/server/notify/queue";
 import { requireApiUserId } from "@/server/api";
 import { error, json } from "@/server/http";
-import { createServerTimingCollector } from "@/server/observability";
+import { withRouteObservability } from "@/server/observability";
 
 type Ctx = { params: Promise<{ slug: string; id: string }> };
 
@@ -22,63 +22,80 @@ const CreatePostSchema = z.object({
 });
 
 export async function GET(req: NextRequest, { params }: Ctx) {
-  const timing = createServerTimingCollector();
-  const { slug, id } = await params;
+  return withRouteObservability(async (timing) => {
+    const { slug, id } = await timing.measure(
+      "route_params",
+      () => params,
+      "route params resolve"
+    );
 
-  const { searchParams } = new URL(req.url);
-  const limit = Math.min(Number(searchParams.get("limit") || "50"), PAGE_MAX);
-  const cursor = searchParams.get("cursor") || null;
-  const { userId: viewerId } = await getSessionViewer();
+    const { searchParams } = new URL(req.url);
+    const limit = Math.min(Number(searchParams.get("limit") || "50"), PAGE_MAX);
+    const cursor = searchParams.get("cursor") || null;
+    const { userId: viewerId } = await timing.measure(
+      "viewer_session",
+      () => getSessionViewer(),
+      "session viewer resolve"
+    );
 
-  const result = await timing.measure(
-    "chapter_post_slice",
-    () =>
-      getChapterPostsByArcSlugAndChapterId({
-        slug,
-        chapterId: id,
-        limit,
-        cursor,
-        viewerId,
-      }),
-    "chapter posts slice fetch"
-  );
-  if (!result) return error("Not found", 404);
+    const result = await timing.measure(
+      "chapter_post_slice",
+      () =>
+        getChapterPostsByArcSlugAndChapterId({
+          slug,
+          chapterId: id,
+          limit,
+          cursor,
+          viewerId,
+        }),
+      "chapter posts slice fetch"
+    );
+    if (!result) return error("Not found", 404);
 
-  return json(
-    { items: result.items, nextCursor: result.nextCursor },
-    { headers: timing.toHeaders() }
-  );
+    return json({ items: result.items, nextCursor: result.nextCursor });
+  });
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
-  const timing = createServerTimingCollector();
-  const { slug, id } = await params;
-  const userId = await timing.measure(
-    "viewer_session",
-    () => requireApiUserId(),
-    "api user resolve"
-  );
-  const parsed = CreatePostSchema.safeParse(await req.json().catch(() => null));
-  if (!parsed.success) return error("Bad Request", 400);
+  return withRouteObservability(async (timing) => {
+    const { slug, id } = await timing.measure(
+      "route_params",
+      () => params,
+      "route params resolve"
+    );
+    const userId = await timing.measure(
+      "viewer_session",
+      () => requireApiUserId(),
+      "api user resolve"
+    );
+    const body = await timing.measure(
+      "request_json",
+      () => req.json().catch(() => null),
+      "request body parse"
+    );
+    const parsed = CreatePostSchema.safeParse(body);
+    if (!parsed.success) return error("Bad Request", 400);
 
-  const dto = await timing.measure(
-    "chapter_post_create",
-    () =>
-      createChapterPostByArcSlugAndChapterId({
-        slug,
-        chapterId: id,
-        userId,
-        contentMd: parsed.data.contentMd,
-      }),
-    "chapter post create"
-  );
+    const dto = await timing.measure(
+      "chapter_post_create",
+      () =>
+        createChapterPostByArcSlugAndChapterId({
+          slug,
+          chapterId: id,
+          userId,
+          contentMd: parsed.data.contentMd,
+        }),
+      "chapter post create"
+    );
 
-  if (process.env.NODE_ENV !== "production") {
-    await drainOutbox({ limit: 100 });
-  }
+    if (process.env.NODE_ENV !== "production") {
+      await timing.measure(
+        "outbox_drain",
+        () => drainOutbox({ limit: 100 }),
+        "dev outbox drain"
+      );
+    }
 
-  return json(
-    { ok: true, post: dto },
-    { status: 201, headers: timing.toHeaders() }
-  );
+    return json({ ok: true, post: dto }, { status: 201 });
+  });
 }

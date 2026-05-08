@@ -15,6 +15,18 @@ import { mapArcRowsToCards } from "@/server/arcs/cardMapper";
 import type { ArcCardT, ArcsDiscoveryResponseT } from "@/server/contracts/arcs";
 import { getArcsCatalog } from "@/server/repos/arcsCatalog";
 
+const ARCS_DISCOVERY_PUBLIC_CACHE_TTL_MS = 15_000;
+
+type ArcsDiscoveryPublicCacheEntry = {
+  value: ArcsDiscoveryResponseT;
+  expiresAt: number;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __arcsDiscoveryPublicCache: ArcsDiscoveryPublicCacheEntry | undefined;
+}
+
 function indexCardsById<T extends { id: string }>(items: T[]) {
   return new Map(items.map((item) => [item.id, item]));
 }
@@ -63,6 +75,12 @@ function rankAndSliceArcs<T extends { id: string; updatedAt: Date }>(
 export async function getArcsDiscovery(
   viewerId?: string | null
 ): Promise<ArcsDiscoveryResponseT> {
+  const canUsePublicCache = !viewerId;
+  const cached = canUsePublicCache ? global.__arcsDiscoveryPublicCache : undefined;
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   try {
     const [topTrending, newJustStarted, recentlyUpdated, underground, continueRows] =
       await Promise.all([
@@ -193,7 +211,7 @@ export async function getArcsDiscovery(
       mapArcRowsToCards(uniqueDisplayedArcs, viewerContext, continueUrlMap)
     );
 
-    return {
+    const result = {
       quickFilters: [...QUICK_FILTERS],
       topTrending: collectPresentCards(rankedTopTrending, cardIndex),
       newJustStarted: collectPresentCards(rankedNewJustStarted, cardIndex),
@@ -201,6 +219,15 @@ export async function getArcsDiscovery(
       continueReading: collectPresentCards(continueArcs, cardIndex),
       underground: collectPresentCards(underground, cardIndex),
     };
+
+    if (canUsePublicCache) {
+      global.__arcsDiscoveryPublicCache = {
+        value: result,
+        expiresAt: Date.now() + ARCS_DISCOVERY_PUBLIC_CACHE_TTL_MS,
+      };
+    }
+
+    return result;
   } catch (error) {
     if (!isDiscoverySchemaMissingError(error)) throw error;
 
@@ -211,7 +238,7 @@ export async function getArcsDiscovery(
       includeHidden: true,
     });
 
-    return {
+    const result = {
       quickFilters: [...QUICK_FILTERS],
       topTrending: fallback.items.slice(0, 6),
       newJustStarted: fallback.items.slice(0, 6),
@@ -219,5 +246,14 @@ export async function getArcsDiscovery(
       continueReading: [],
       underground: [],
     };
+
+    if (canUsePublicCache) {
+      global.__arcsDiscoveryPublicCache = {
+        value: result,
+        expiresAt: Date.now() + ARCS_DISCOVERY_PUBLIC_CACHE_TTL_MS,
+      };
+    }
+
+    return result;
   }
 }

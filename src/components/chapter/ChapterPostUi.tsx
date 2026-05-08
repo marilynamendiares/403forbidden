@@ -1,38 +1,69 @@
 "use client";
 
 import { Heart, Star } from "lucide-react";
+import Link from "next/link";
 import AvatarImg from "@/components/avatarImg";
 
 export function ChapterPostHeader({
   author,
+  character,
+  createdAt,
   display,
   edited,
 }: {
-  author: { username: string | null; avatarUrl: string | null };
+  author: {
+    username: string | null;
+    displayName?: string | null;
+    avatarUrl: string | null;
+  };
+  character: { name: string; avatarUrl: string | null } | null;
+  createdAt: string;
   display: string;
   edited: boolean;
 }) {
+  const displayName = character?.name ?? author.displayName ?? author.username ?? "Unknown";
+  const avatarUrl = character?.avatarUrl ?? author.avatarUrl;
+  const username = author.username ?? "user";
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
-        {author.avatarUrl ? (
+    <details className="group w-fit max-w-full">
+      <summary className="flex cursor-pointer list-none items-center gap-3">
+        <span className="h-8 w-8 shrink-0 overflow-hidden rounded-full bg-muted">
+          {avatarUrl ? (
           <AvatarImg
-            src={author.avatarUrl ?? undefined}
+            src={avatarUrl ?? undefined}
             alt=""
             className="h-8 w-8 rounded-full object-cover"
           />
         ) : null}
-      </div>
+        </span>
 
-      <div className="text-sm text-muted-foreground">
-        posted by <span className="font-medium">@{author.username ?? "user"}</span>
-        {" • "}
-        <time dateTime={new Date(display).toISOString()} title={display}>
+        <span className="text-sm text-muted-foreground">
+          <span className="font-medium text-neutral-600">{displayName}</span>
+          {" / "}
+          <time dateTime={createdAt} title={display}>
           {display}
         </time>
         {edited ? <span className="ml-1 opacity-60">(edited)</span> : null}
+        </span>
+      </summary>
+
+      <div className="ml-11 mt-2 rounded-md border border-neutral-300/70 bg-neutral-100/60 px-3 py-2 text-xs text-neutral-600">
+        <div className="uppercase tracking-[0.16em] text-neutral-400">
+          Character transmission
+        </div>
+        <div className="mt-1">
+          <span className="font-medium text-neutral-700">{displayName}</span>
+          {" by "}
+          <Link
+            href={`/u/${encodeURIComponent(username)}`}
+            className="underline decoration-neutral-400 underline-offset-4 hover:text-neutral-900"
+          >
+            @{username}
+          </Link>
+        </div>
       </div>
-    </div>
+    </details>
   );
 }
 

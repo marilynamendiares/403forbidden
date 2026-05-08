@@ -31,6 +31,12 @@ const CHARACTER_APPLICATION_ADMIN_SELECT = {
   },
 } as const;
 
+function hasVisualReference(form: unknown) {
+  if (!form || typeof form !== "object" || Array.isArray(form)) return false;
+  const value = (form as { visualRefUrl?: unknown }).visualRefUrl;
+  return typeof value === "string" && value.trim().length > 0;
+}
+
 export async function listCharacterApplicationsForUser(userId: string) {
   return prisma.characterApplication.findMany({
     where: { userId },
@@ -137,6 +143,32 @@ export async function submitCharacterApplicationForUser(input: {
   id: string;
 }) {
   const now = new Date();
+  const current = await prisma.characterApplication.findFirst({
+    where: {
+      id: input.id,
+      userId: input.userId,
+      status: { in: ["DRAFT", "NEEDS_CHANGES"] },
+    },
+    select: { id: true, form: true },
+  });
+
+  if (!current) {
+    const exists = await prisma.characterApplication.findFirst({
+      where: { id: input.id, userId: input.userId },
+      select: { id: true, status: true },
+    });
+
+    if (!exists) {
+      throw new CharacterApplicationHttpError(404, "not_found");
+    }
+
+    throw new CharacterApplicationHttpError(409, "bad_status");
+  }
+
+  if (!hasVisualReference(current.form)) {
+    throw new CharacterApplicationHttpError(400, "visual_ref_required");
+  }
+
   const result = await prisma.characterApplication.updateMany({
     where: {
       id: input.id,
@@ -276,7 +308,12 @@ export async function reviewCharacterApplication(input: {
     throw new CharacterApplicationHttpError(404, "not_found");
   }
 
-  if (!["SUBMITTED", "UNDER_REVIEW", "NEEDS_CHANGES"].includes(target.status)) {
+  const allowedStatuses =
+    input.action === "NEEDS_CHANGES"
+      ? ["SUBMITTED", "UNDER_REVIEW", "NEEDS_CHANGES", "APPROVED"]
+      : ["SUBMITTED", "UNDER_REVIEW", "NEEDS_CHANGES"];
+
+  if (!allowedStatuses.includes(target.status)) {
     throw new CharacterApplicationHttpError(409, "bad_status");
   }
 

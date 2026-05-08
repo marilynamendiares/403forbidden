@@ -1,5 +1,7 @@
 import { prisma } from "@/server/db";
 import { coerceMediaKey } from "@/lib/media";
+import { getApprovedCharacterIdentity } from "@/server/services/characterIdentity";
+import { getProfileArcChronology } from "@/server/services/profileArcChronology";
 
 export class PublicProfileHttpError extends Error {
   status: number;
@@ -49,7 +51,7 @@ export async function getPublicProfilePageByUsername(username: string) {
     throw new PublicProfileHttpError(404, "Profile not found");
   }
 
-  const [wallet, likesReceived] = await Promise.all([
+  const [wallet, likesReceived, chronology] = await Promise.all([
     prisma.wallet.findUnique({
       where: { userId: user.id },
       select: { eurodollars: true, reputationTotal: true },
@@ -57,7 +59,10 @@ export async function getPublicProfilePageByUsername(username: string) {
     prisma.chapterPostLike.count({
       where: { post: { authorId: user.id } },
     }),
+    getProfileArcChronology({ userId: user.id, publicOnly: true }),
   ]);
+
+  const approvedCharacter = await getApprovedCharacterIdentity(user.id);
 
   return {
     user: {
@@ -73,6 +78,8 @@ export async function getPublicProfilePageByUsername(username: string) {
       reputation: wallet?.reputationTotal ?? 0,
       likesReceived,
     },
+    approvedCharacter,
+    chronology,
   };
 }
 

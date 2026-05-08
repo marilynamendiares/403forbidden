@@ -1,6 +1,7 @@
 import type React from "react";
 import type { ShellScrollMode } from "@/app/shell/ShellScrollMode";
 import type { ShellVariant } from "@/app/shell/ShellVariantContext";
+import { useShellRightRail } from "@/app/shell/ShellRightRailContext";
 
 type Props = {
   scrollMode: ShellScrollMode;
@@ -9,6 +10,8 @@ type Props = {
 };
 
 export default function ShellPanelBody({ scrollMode, variant, children }: Props) {
+  const { node: rightRailNode } = useShellRightRail();
+
   return (
     <div
       className={[
@@ -45,7 +48,13 @@ export default function ShellPanelBody({ scrollMode, variant, children }: Props)
           <aside
             className="overflow-hidden border-l border-white/10"
             style={{ width: "var(--right-rail-w)" }}
-          />
+          >
+            {rightRailNode ? (
+              <div className="h-full overflow-y-auto px-6 py-[72px]">
+                {rightRailNode}
+              </div>
+            ) : null}
+          </aside>
         ) : null}
       </div>
     </div>

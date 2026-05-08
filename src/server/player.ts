@@ -1,13 +1,10 @@
-import { prisma } from "@/server/db";
+import {
+  getApprovedCharacterIdentity,
+  hasApprovedCharacter,
+} from "@/server/services/characterIdentity";
 
 export async function isPlayer(userId: string | null) {
-  if (!userId) return false;
-
-  const approved = await prisma.characterApplication.findFirst({
-    where: { userId, status: "APPROVED" },
-    select: { id: true },
-  });
-  return !!approved;
+  return hasApprovedCharacter(userId);
 }
 
 
@@ -28,9 +25,5 @@ export async function requirePlayer(userId: string | null) {
 }
 
 export async function getApprovedCharacter(userId: string) {
-  return prisma.characterApplication.findFirst({
-    where: { userId, status: "APPROVED" },
-    orderBy: { updatedAt: "desc" },
-    select: { id: true, name: true, form: true, updatedAt: true },
-  });
+  return getApprovedCharacterIdentity(userId);
 }

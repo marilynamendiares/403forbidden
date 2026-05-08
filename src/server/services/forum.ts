@@ -2,6 +2,7 @@ import { prisma } from "@/server/db";
 import {
   createThread,
   getCategoryPolicyBySlug,
+  invalidateForumCategoryReadCaches,
   syncForumThreadLastActivity,
 } from "@/server/repos/forum";
 import { isAdminOnlyCategory, restrictedCanPost } from "@/server/forumAcl";
@@ -59,13 +60,17 @@ export async function createThreadForUser(input: {
     }
   }
 
-  return createThread({
+  const thread = await createThread({
     categoryId: pol?.id,
     categorySlug: input.category,
     authorId: input.userId,
     title: input.title,
     content: input.content ?? null,
   });
+
+  invalidateForumCategoryReadCaches(input.category, thread.slug);
+
+  return thread;
 }
 
 export async function createThreadPostForUser(input: {
@@ -170,6 +175,8 @@ export async function createThreadPostForUser(input: {
     at: Date.now(),
   });
 
+  invalidateForumCategoryReadCaches(input.category, input.slug);
+
   return post;
 }
 
@@ -249,6 +256,8 @@ export async function deleteThreadForUser(input: {
       data: { deletedAt: now, deletedById: input.userId, hiddenAt: null, hiddenById: null },
     });
   });
+
+  invalidateForumCategoryReadCaches(input.category, input.slug);
 }
 
 export async function setThreadHiddenForAdmin(input: {
@@ -278,7 +287,7 @@ export async function setThreadHiddenForAdmin(input: {
   }
 
   const now = new Date();
-  return prisma.forumThread.update({
+  const updated = await prisma.forumThread.update({
     where: { id: thread.id },
     data: input.hidden
       ? { hiddenAt: now, hiddenById: input.userId }
@@ -289,6 +298,9 @@ export async function setThreadHiddenForAdmin(input: {
       hiddenById: true,
     },
   });
+
+  invalidateForumCategoryReadCaches(input.category, input.slug);
+  return updated;
 }
 
 export async function setThreadLockedForUser(input: {
@@ -316,11 +328,14 @@ export async function setThreadLockedForUser(input: {
     throw new ForumHttpError(409, "already_open");
   }
 
-  return prisma.forumThread.update({
+  const updated = await prisma.forumThread.update({
     where: { id: thread.id },
     data: { locked: input.locked },
     select: { id: true, locked: true },
   });
+
+  invalidateForumCategoryReadCaches(input.category, input.slug);
+  return updated;
 }
 
 export async function deleteThreadPostForUser(input: {
@@ -402,6 +417,10 @@ export async function deleteThreadPostForUser(input: {
     deletedById: input.userId,
     at: Date.now(),
   });
+
+  if (post.thread?.category.slug && post.thread?.slug) {
+    invalidateForumCategoryReadCaches(post.thread.category.slug, post.thread.slug);
+  }
 }
 
 export async function setThreadPostHiddenForAdmin(input: {
@@ -500,6 +519,10 @@ export async function setThreadPostHiddenForAdmin(input: {
     hiddenById: updated.hiddenById ?? null,
     at: Date.now(),
   });
+
+  if (post.thread?.category.slug && post.thread?.slug) {
+    invalidateForumCategoryReadCaches(post.thread.category.slug, post.thread.slug);
+  }
 
   return updated;
 }
@@ -601,6 +624,12 @@ async function getForumPostReactionTarget(postId: string) {
       authorId: true,
       hiddenAt: true,
       deletedAt: true,
+      thread: {
+        select: {
+          slug: true,
+          category: { select: { slug: true } },
+        },
+      },
     },
   });
 
@@ -637,6 +666,10 @@ export async function likeForumPostForUser(input: {
     where: { postId: input.postId },
   });
 
+  if (target.thread?.category.slug && target.thread.slug) {
+    invalidateForumCategoryReadCaches(target.thread.category.slug, target.thread.slug);
+  }
+
   return { ok: true as const, liked: true as const, likesCount };
 }
 
@@ -644,6 +677,8 @@ export async function unlikeForumPostForUser(input: {
   postId: string;
   userId: string;
 }) {
+  const target = await getForumPostReactionTarget(input.postId);
+
   await prisma.forumPostLike
     .delete({ where: { userId_postId: { userId: input.userId, postId: input.postId } } })
     .catch(() => null);
@@ -651,6 +686,10 @@ export async function unlikeForumPostForUser(input: {
   const likesCount = await prisma.forumPostLike.count({
     where: { postId: input.postId },
   });
+
+  if (target.thread?.category.slug && target.thread.slug) {
+    invalidateForumCategoryReadCaches(target.thread.category.slug, target.thread.slug);
+  }
 
   return { ok: true as const, liked: false as const, likesCount };
 }
@@ -775,6 +814,10 @@ export async function grantForumPostReputationForUser(input: {
     where: { postId: input.postId },
     _sum: { amount: true },
   });
+
+  if (target.thread?.category.slug && target.thread.slug) {
+    invalidateForumCategoryReadCaches(target.thread.category.slug, target.thread.slug);
+  }
 
   return { ok: true as const, repCount: rep._sum.amount ?? 0 };
 }

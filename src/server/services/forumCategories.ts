@@ -39,7 +39,7 @@ const DEFAULT_FORUM_CATEGORIES = [
   },
   {
     slug: "offtopic",
-    title: "Lounge / Offtopic",
+    title: "offtopic",
     desc: "Anything else",
     readVisibility: "MEMBERS",
     createThreadVisibility: "PLAYERS",
@@ -90,6 +90,120 @@ export async function listVisibleForumCategories(input: {
   });
 
   return { tier, categories: visible };
+}
+
+export function canReadForumCategory(input: {
+  tier: ForumCategoryTier;
+  readVisibility: "PUBLIC" | "MEMBERS" | "PLAYERS";
+}) {
+  if (input.tier === "ADMIN") return true;
+  if (input.readVisibility === "PUBLIC") return true;
+  if (input.readVisibility === "MEMBERS") {
+    return input.tier === "RESTRICTED" || input.tier === "PLAYER";
+  }
+  if (input.readVisibility === "PLAYERS") {
+    return input.tier === "PLAYER";
+  }
+  return false;
+}
+
+export function getForumCategoryAccessCopy(input: {
+  userId: string | null;
+  readVisibility: "PUBLIC" | "MEMBERS" | "PLAYERS";
+}) {
+  if (input.readVisibility === "PUBLIC") {
+    return {
+      label: "public",
+      title: "Public channel",
+      description: "This area is visible from the outer layer.",
+      actionHref: null,
+      actionLabel: null,
+    };
+  }
+
+  if (input.readVisibility === "MEMBERS") {
+    return {
+      label: "members only",
+      title: "Members only",
+      description: "Sign in to enter this forum category.",
+      actionHref: "/login?next=/forum",
+      actionLabel: "Log in",
+    };
+  }
+
+  return {
+    label: "approved characters only",
+    title: "Approved characters only",
+    description: input.userId
+      ? "Create and approve your character to enter this forum category."
+      : "Log in and create an approved character to enter this forum category.",
+    actionHref: input.userId ? "/characters" : "/login?next=/forum",
+    actionLabel: input.userId ? "Create your character" : "Log in",
+  };
+}
+
+export async function listForumCategoriesWithAccess(input: {
+  userId: string | null;
+  isAdmin: boolean;
+}) {
+  await ensureDefaultForumCategories();
+  const tier = await getForumCategoryTier(input);
+  const categories = await getCategories();
+
+  const categoriesWithAccess = categories.map((category) => {
+    const readVisibility = (category.readVisibility ?? "MEMBERS") as
+      | "PUBLIC"
+      | "MEMBERS"
+      | "PLAYERS";
+    const access = getForumCategoryAccessCopy({
+      userId: input.userId,
+      readVisibility,
+    });
+
+    return {
+      ...category,
+      readVisibility,
+      canRead: canReadForumCategory({ tier, readVisibility }),
+      accessLabel: access.label,
+      accessTitle: access.title,
+      accessDescription: access.description,
+      accessActionHref: access.actionHref,
+      accessActionLabel: access.actionLabel,
+    };
+  });
+
+  const latestThreads = await Promise.all(
+    categoriesWithAccess
+      .filter((category) => category.canRead)
+      .map(async (category) => {
+        const latestThread = await prisma.forumThread.findFirst({
+          where: {
+            categoryId: category.id,
+            deletedAt: null,
+            ...(input.isAdmin ? {} : { hiddenAt: null }),
+          },
+          orderBy: [{ lastActivityAt: "desc" }, { updatedAt: "desc" }],
+          select: {
+            slug: true,
+            title: true,
+            lastActivityAt: true,
+            hiddenAt: true,
+          },
+        });
+
+        return [category.id, latestThread] as const;
+      })
+  );
+
+  const latestThreadByCategoryId = new Map(latestThreads);
+
+  return {
+    tier,
+    categories: categoriesWithAccess.map((category) => ({
+      ...category,
+      latestThread: latestThreadByCategoryId.get(category.id) ?? null,
+    })),
+  };
 }
 
 export async function createForumCategory(input: {

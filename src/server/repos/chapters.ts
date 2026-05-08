@@ -7,6 +7,10 @@ import { userAuthorSelect } from "@/server/fragments";
 import { toAuthorDTO } from "@/server/dto";
 import { sanitizeHtml } from "@/server/render/sanitizeHtml";
 import { getArcViewerAccess } from "@/server/arcs/access";
+import {
+  getApprovedCharacterIdentitiesForUsers,
+  getApprovedCharacterIdentity,
+} from "@/server/services/characterIdentity";
 import { requirePlayer } from "@/server/player";
 import { queueEvent } from "@/server/notify/queue";
 import { listArcFollowerIds } from "@/server/follow";
@@ -75,6 +79,11 @@ export type ChapterPostDTO = {
     displayName: string | null;
     avatarUrl: string | null;
   };
+  character: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  } | null;
 };
 
 export type ChapterPostWithInteractionsDTO = ChapterPostDTO & {
@@ -368,13 +377,16 @@ export async function getChapterPosts(params: {
   });
 
   const slice = rows.slice(0, limit);
-  const items: ChapterPostDTO[] = slice.map((r) => ({
-    id: r.id,
-    contentMd: r.contentMd,
-    createdAt: r.createdAt.toISOString(),
-    editedAt: r.editedAt ? r.editedAt.toISOString() : null,
-    author: toAuthorDTO(r.author),
-  }));
+  const items = await attachApprovedCharacterIdentities(
+    slice.map((r) => ({
+      id: r.id,
+      contentMd: r.contentMd,
+      createdAt: r.createdAt.toISOString(),
+      editedAt: r.editedAt ? r.editedAt.toISOString() : null,
+      author: toAuthorDTO(r.author),
+      character: null,
+    }))
+  );
 
   const last = slice.at(-1);
   const nextCursor =
@@ -418,13 +430,16 @@ export async function getChapterPostsByChapterId(params: {
   });
 
   const slice = rows.slice(0, params.limit);
-  const items: ChapterPostDTO[] = slice.map((row) => ({
-    id: row.id,
-    contentMd: row.contentMd,
-    createdAt: row.createdAt.toISOString(),
-    editedAt: row.editedAt ? row.editedAt.toISOString() : null,
-    author: toAuthorDTO(row.author),
-  }));
+  const items = await attachApprovedCharacterIdentities(
+    slice.map((row) => ({
+      id: row.id,
+      contentMd: row.contentMd,
+      createdAt: row.createdAt.toISOString(),
+      editedAt: row.editedAt ? row.editedAt.toISOString() : null,
+      author: toAuthorDTO(row.author),
+      character: null,
+    }))
+  );
 
   const last = slice.at(-1);
   const nextCursor =
@@ -571,6 +586,20 @@ async function attachChapterPostInteractions(
   };
 }
 
+async function attachApprovedCharacterIdentities<T extends ChapterPostDTO>(
+  items: T[]
+): Promise<T[]> {
+  const authorIds = [...new Set(items.map((item) => item.author.id).filter(Boolean))];
+  if (authorIds.length === 0) return items;
+
+  const byUserId = await getApprovedCharacterIdentitiesForUsers(authorIds);
+
+  return items.map((item) => ({
+    ...item,
+    character: byUserId.get(item.author.id) ?? null,
+  }));
+}
+
 type ChapterPostIdentity = {
   id: string;
   index: number;
@@ -651,6 +680,7 @@ async function createChapterPostFromIdentity(input: {
   }
 
   const safeContent = created.contentHtml ?? created.contentMd;
+  const character = await getApprovedCharacterIdentity(userId);
 
   await emit("chapter:new_post", {
     slug,
@@ -662,6 +692,7 @@ async function createChapterPostFromIdentity(input: {
       createdAt: created.createdAt.toISOString(),
       editedAt: created.editedAt ? created.editedAt.toISOString() : null,
       author: toAuthorDTO(created.author),
+      character,
     },
   });
 
@@ -671,6 +702,7 @@ async function createChapterPostFromIdentity(input: {
     createdAt: created.createdAt.toISOString(),
     editedAt: created.editedAt ? created.editedAt.toISOString() : null,
     author: toAuthorDTO(created.author),
+    character,
   };
 
   await refreshDiscoveryContentForArc(chapter.arcId);

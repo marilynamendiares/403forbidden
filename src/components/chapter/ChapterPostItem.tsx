@@ -31,7 +31,17 @@ export function ChapterPostItem(props: {
     repCount?: number;
     repGivenByMe?: boolean;
   };
-  author: { id: string; username: string | null; avatarUrl: string | null };
+  author: {
+    id: string;
+    username: string | null;
+    displayName: string | null;
+    avatarUrl: string | null;
+  };
+  character?: {
+    id: string;
+    name: string;
+    avatarUrl: string | null;
+  } | null;
   currentUserId?: string | null;
   slug?: string;
   index?: number | string;
@@ -41,7 +51,7 @@ export function ChapterPostItem(props: {
     next?: Partial<{ contentMd: string; editedAt?: string | null }>
   ) => void;
 }) {
-  const { post, author, currentUserId, slug, index, onAfterChange } = props;
+  const { post, author, character, currentUserId, slug, index, onAfterChange } = props;
   const dt = new Date(post.createdAt);
   const display = dt.toLocaleString();
   const isMine = !!currentUserId && currentUserId === author.id;
@@ -263,6 +273,8 @@ export function ChapterPostItem(props: {
     <article className="py-3 border-b border-border/50">
       <ChapterPostHeader
         author={author}
+        character={character ?? null}
+        createdAt={post.createdAt}
         display={display}
         edited={Boolean(post.editedAt)}
       />

@@ -3,7 +3,7 @@ import { prisma } from "@/server/db";
 const CATEGORIES = [
   {
     slug: "welcome",
-    title: "Guestbook / Welcome",
+    title: "welcome",
     desc: "Start here",
     readVisibility: "PUBLIC",
     createThreadVisibility: "ADMIN",
@@ -11,7 +11,7 @@ const CATEGORIES = [
   },
   {
     slug: "offtopic",
-    title: "Lounge / Offtopic",
+    title: "offtopic",
     desc: "Anything else",
     readVisibility: "MEMBERS",
     createThreadVisibility: "PLAYERS",

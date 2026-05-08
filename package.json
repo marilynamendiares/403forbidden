@@ -11,6 +11,7 @@
     "schema:refresh": "prisma generate && next typegen && pnpm run typecheck",
     "postinstall": "prisma generate",
     "migrate:content-html": "tsx scripts/migrate-content-html.ts",
+    "observability:baseline": "tsx scripts/collect-observability-baselines.ts",
     "seed:forum": "tsx scripts/seed-forum-categories.ts",
     "seed:shop": "tsx scripts/seed-shop.ts",
     "arcs:seed-fixtures": "tsx scripts/seed-arcs-fixtures.ts",

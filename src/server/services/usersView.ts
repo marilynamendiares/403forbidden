@@ -1,12 +1,18 @@
 import { prisma } from "@/server/db";
+import { getApprovedCharacterIdentitiesForUsers } from "@/server/services/characterIdentity";
 
-type UsersDirectoryRow = {
+export type UsersDirectoryRow = {
   id: string;
   username: string;
-  fullName: string;
+  displayName: string;
+  avatarUrl: string | null;
+  characterName: string | null;
   batteryPct: number;
+  lastSeenAt: string | null;
   kind: "player" | "restricted";
 };
+
+const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
 function batteryFromLastSeen(lastSeenAt: Date | null) {
   if (!lastSeenAt) return 0;
@@ -21,27 +27,41 @@ export async function listUsersDirectory(): Promise<UsersDirectoryRow[]> {
       id: true,
       username: true,
       lastSeenAt: true,
-      profile: { select: { displayName: true } },
+      profile: { select: { displayName: true, avatarUrl: true } },
       characterApplications: { select: { status: true } },
     },
     orderBy: { username: "asc" },
   });
 
+  const characterByUserId = await getApprovedCharacterIdentitiesForUsers(
+    users.map((user) => user.id)
+  );
+
   return users
     .map((user) => {
-      const isPlayer = user.characterApplications.some(
-        (application) => application.status === "APPROVED"
-      );
+      const approvedCharacter = characterByUserId.get(user.id) ?? null;
+      const isPlayer = Boolean(approvedCharacter);
 
       return {
         id: user.id,
         username: user.username,
-        fullName: user.profile?.displayName ?? "—",
+        displayName: user.profile?.displayName ?? user.username,
+        avatarUrl: user.profile?.avatarUrl ?? null,
+        characterName: approvedCharacter?.name ?? null,
         batteryPct: batteryFromLastSeen(user.lastSeenAt),
+        lastSeenAt: user.lastSeenAt?.toISOString() ?? null,
         kind: isPlayer ? ("player" as const) : ("restricted" as const),
       };
     })
     .sort((left, right) => {
+      const leftOnline =
+        left.lastSeenAt !== null &&
+        Date.now() - new Date(left.lastSeenAt).getTime() <= ONLINE_WINDOW_MS;
+      const rightOnline =
+        right.lastSeenAt !== null &&
+        Date.now() - new Date(right.lastSeenAt).getTime() <= ONLINE_WINDOW_MS;
+      if (leftOnline !== rightOnline) return leftOnline ? -1 : 1;
+
       if (left.kind === right.kind) {
         return left.username.localeCompare(right.username);
       }

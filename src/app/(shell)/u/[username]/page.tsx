@@ -1,10 +1,11 @@
 // src/app/u/[username]/page.tsx
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ThumbsUp, Star } from "lucide-react";
 import AvatarImg from "@/components/avatarImg";
-import { resolveMediaUrl } from "@/lib/media";
+import { CharacterProfileCard } from "@/components/characters/CharacterProfileCard";
+import ProfileArcChronology from "@/components/profile/ProfileArcChronology";
+import ShellRightRailSlot from "@/app/shell/ShellRightRailSlot";
 import { getSessionViewer } from "@/server/session";
 import {
   getPublicProfilePageByUsername,
@@ -51,116 +52,108 @@ export default async function PublicProfilePage({ params }: Params) {
   if (!profile) notFound();
 
   const isMe = me === profile.user.id;
-  const name = profile.user.displayName;
-  const bio = profile.user.bio;
-
+  if (isMe) redirect("/me");
 
   return (
-    <div className="pb-8 space-y-6">
-      {/* HERO (2-row layout: top aligns by avatar only; stats are separate row) */}
-      <section className="grid grid-cols-12 gap-6">
-        {/* ── TOP ROW ───────────────────────────────────────────── */}
-        {/* LEFT: AVATAR */}
-        <div className="col-span-12 md:col-span-3">
-          <div className="aspect-square w-full max-w-55 rounded-2xl overflow-hidden bg-neutral-900">
-            <AvatarImg
-              src={profile.user.avatarUrl ?? undefined}
-              alt={`${name} avatar`}
-              className="h-full w-full object-cover"
-            />
-          </div>
+    <div className="space-y-6 pb-8">
+      <ShellRightRailSlot>
+        {profile.approvedCharacter ? (
+          <CharacterProfileCard character={profile.approvedCharacter} />
+        ) : (
+          <section className="rounded-xl border border-neutral-800 bg-neutral-950/35 p-4">
+            <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+              Character profile
+            </div>
+            <h2 className="mt-2 text-lg font-semibold text-neutral-100">
+              No character submitted
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-400">
+              This account does not expose an approved character dossier yet.
+            </p>
+          </section>
+        )}
+      </ShellRightRailSlot>
+
+      <section className="grid gap-6 rounded-xl border border-neutral-800 bg-neutral-950/30 p-5 md:grid-cols-[120px_1fr_auto] md:items-center">
+        <div className="h-28 w-28 overflow-hidden rounded-xl bg-neutral-900">
+          <AvatarImg
+            src={profile.user.avatarUrl ?? undefined}
+            alt={`${profile.user.displayName} avatar`}
+            className="h-full w-full object-cover"
+          />
         </div>
 
-        {/* RIGHT: BANNER + NAME ROW (height follows avatar only, not stats) */}
-        <div className="col-span-12 md:col-span-9">
-          <div className="grid h-full grid-rows-[auto_auto] gap-2">
-            <div className="h-36 rounded-2xl bg-neutral-900 overflow-hidden">
-              {profile.user.bannerUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={resolveMediaUrl(profile.user.bannerUrl) ?? ""}
-                  alt={`${name} banner`}
-                  className="h-full w-full object-cover"
-                />
-              ) : null}
-            </div>
-
-            {/* Name row: sits under banner, independent of stats */}
-            <div className="flex items-end justify-between gap-4">
-              <div className="min-w-0">
-                <h1 className="text-3xl font-semibold leading-tight">{name}</h1>
-                <p className="mt-1 text-lg opacity-70 leading-none">
-                  @{profile.user.username}
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Link
-                  href={`/u/${encodeURIComponent(profile.user.username)}/inventory`}
-                  className="rounded-lg border px-3 py-2 text-sm hover:bg-neutral-900"
-                >
-                  Inventory
-                </Link>
-
-                {isMe && (
-                  <Link
-                    href="/profile/settings"
-                    className="rounded-lg border px-3 py-2 text-sm hover:bg-accent"
-                  >
-                    Edit profile
-                  </Link>
-                )}
-              </div>
-            </div>
+        <div className="min-w-0">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            Public profile
           </div>
+          <h1 className="mt-2 truncate text-3xl font-semibold text-neutral-100">
+            {profile.user.displayName}
+          </h1>
+          <p className="mt-1 text-lg text-neutral-400">@{profile.user.username}</p>
+          {profile.user.bio ? (
+            <p className="mt-3 max-w-2xl whitespace-pre-wrap text-sm leading-6 text-neutral-400">
+              {profile.user.bio}
+            </p>
+          ) : (
+            <p className="mt-3 text-sm text-neutral-500">No bio yet.</p>
+          )}
         </div>
 
-        {/* ── BOTTOM ROW ────────────────────────────────────────── */}
-        {/* LEFT: stats */}
-        <div className="col-span-12 md:col-span-3">
-          <div className="mt-3 flex items-center gap-5 text-sm">
-            <div className="inline-flex items-center gap-2 text-neutral-300">
-              <ThumbsUp className="h-4 w-4 text-neutral-500" />
-              <span className="tabular-nums">{profile.stats.likesReceived}</span>
-            </div>
+        <Link
+          href={`/u/${encodeURIComponent(profile.user.username)}/inventory`}
+          className="inline-flex w-fit rounded-md border border-neutral-700 px-3 py-2 text-sm hover:border-neutral-500 hover:bg-neutral-900 md:justify-self-end"
+        >
+          Inventory
+        </Link>
+      </section>
 
-            <div className="inline-flex items-center gap-2 text-neutral-300">
-              <Star className="h-4 w-4 text-neutral-500" />
-              <span className="tabular-nums">{profile.stats.reputation}</span>
-            </div>
-
-            <div className="inline-flex items-center gap-2">
-              <span className="font-mono text-emerald-400">€$</span>
-              <span className="tabular-nums text-neutral-300">
-                {profile.stats.eurodollars}
-              </span>
-            </div>
+      <section className="grid gap-3 md:grid-cols-3">
+        <div className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-4">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            Likes
+          </div>
+          <div className="mt-3 text-2xl font-semibold text-neutral-100 tabular-nums">
+            {profile.stats.likesReceived}
           </div>
         </div>
-
-        {/* RIGHT: bio aligned with stats row */}
-        <div className="col-span-12 md:col-span-9">
-          <div className="mt-3">
-            {bio ? (
-              <div className="text-sm text-neutral-300/80 whitespace-pre-wrap">
-                {bio}
-              </div>
-            ) : (
-              <p className="text-sm opacity-50">No bio yet.</p>
-            )}
+        <div className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-4">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            Reputation
+          </div>
+          <div className="mt-3 text-2xl font-semibold text-neutral-100 tabular-nums">
+            {profile.stats.reputation}
+          </div>
+        </div>
+        <div className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-4">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            Wallet
+          </div>
+          <div className="mt-3 text-2xl font-semibold text-neutral-100">
+            <span className="font-mono text-emerald-400">€$</span>{" "}
+            <span className="tabular-nums">{profile.stats.eurodollars}</span>
           </div>
         </div>
       </section>
 
-      {/* Placeholders below */}
-      <section className="border border-neutral-800 rounded-xl p-4">
-        <h2 className="text-lg font-medium mb-2">Arcs</h2>
-        <p className="opacity-60 text-sm">No arcs yet. (soon)</p>
-      </section>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <ProfileArcChronology
+          items={profile.chronology}
+          isLocked={!profile.approvedCharacter}
+        />
 
-      <section className="border border-neutral-800 rounded-xl p-4">
-        <h2 className="text-lg font-medium mb-2">Threads</h2>
-        <p className="opacity-60 text-sm">No threads yet. (soon)</p>
+        <section className="rounded-xl border border-neutral-800 bg-neutral-950/30 p-4">
+          <div className="text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+            Social
+          </div>
+          <h2 className="mt-2 text-lg font-semibold text-neutral-100">
+            Forum activity
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-neutral-400">
+            Public threads, mentions and social traces can be connected here
+            after the forum activity model is finalized.
+          </p>
+        </section>
       </section>
     </div>
   );

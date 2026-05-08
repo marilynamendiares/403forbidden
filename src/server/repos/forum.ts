@@ -15,6 +15,103 @@ type PostCursor = {
   id: string;
 };
 
+const FORUM_CATEGORY_ID_CACHE_TTL_MS = 60_000;
+const FORUM_THREAD_LOOKUP_CACHE_TTL_MS = 30_000;
+const FORUM_CATEGORY_THREADS_FIRST_PAGE_CACHE_TTL_MS = 15_000;
+const FORUM_THREAD_FIRST_SLICE_CACHE_TTL_MS = 15_000;
+type ForumCategoryIdCacheEntry = { id: string; expiresAt: number };
+type ForumThreadLookupCacheEntry = {
+  value: {
+    id: string;
+    slug: string;
+    title: string;
+    authorId: string;
+    locked: boolean;
+    deletedAt: Date | null;
+    hiddenAt: Date | null;
+    hiddenById: string | null;
+  } | null;
+  expiresAt: number;
+};
+type ForumThreadFirstSliceCacheEntry = {
+  value: {
+    thread: {
+      id: string;
+      slug: string;
+      title: string;
+      authorId: string;
+      locked: boolean;
+      hiddenAt: Date | null;
+      hiddenById: string | null;
+    };
+    items: ForumThreadPostDTO[];
+    nextCursor: string | null;
+  };
+  expiresAt: number;
+};
+type ForumCategoryThreadsFirstPageCacheEntry = {
+  value: {
+    items: Array<{
+      id: string;
+      slug: string;
+      title: string;
+      createdAt: Date;
+      lastActivityAt: Date;
+      updatedAt: Date;
+      locked: boolean;
+      hiddenAt: Date | null;
+      hiddenById: string | null;
+      author: ReturnType<typeof toAuthorDTO>;
+      _count: {
+        posts: number;
+      };
+    }>;
+    nextCursor: string | null;
+  };
+  expiresAt: number;
+};
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __forumCategoryIdCache: Map<string, ForumCategoryIdCacheEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __forumThreadLookupCache: Map<string, ForumThreadLookupCacheEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __forumThreadFirstSliceCache: Map<string, ForumThreadFirstSliceCacheEntry> | undefined;
+  // eslint-disable-next-line no-var
+  var __forumCategoryThreadsFirstPageCache:
+    | Map<string, ForumCategoryThreadsFirstPageCacheEntry>
+    | undefined;
+}
+
+const forumCategoryIdCache =
+  global.__forumCategoryIdCache ?? new Map<string, ForumCategoryIdCacheEntry>();
+const forumThreadLookupCache =
+  global.__forumThreadLookupCache ??
+  new Map<
+  string,
+    ForumThreadLookupCacheEntry
+  >();
+const forumThreadFirstSliceCache =
+  global.__forumThreadFirstSliceCache ??
+  new Map<string, ForumThreadFirstSliceCacheEntry>();
+const forumCategoryThreadsFirstPageCache =
+  global.__forumCategoryThreadsFirstPageCache ??
+  new Map<string, ForumCategoryThreadsFirstPageCacheEntry>();
+
+if (!global.__forumCategoryIdCache) {
+  global.__forumCategoryIdCache = forumCategoryIdCache;
+}
+if (!global.__forumThreadLookupCache) {
+  global.__forumThreadLookupCache = forumThreadLookupCache;
+}
+if (!global.__forumThreadFirstSliceCache) {
+  global.__forumThreadFirstSliceCache = forumThreadFirstSliceCache;
+}
+if (!global.__forumCategoryThreadsFirstPageCache) {
+  global.__forumCategoryThreadsFirstPageCache = forumCategoryThreadsFirstPageCache;
+}
+
 function encodeForumCursor(cursor: ThreadCursor | PostCursor) {
   return Buffer.from(JSON.stringify(cursor)).toString("base64url");
 }
@@ -34,6 +131,17 @@ export async function getThreadsByCategory(params: {
   cursorId?: string;
   includeHidden?: boolean;
 }) {
+  const canUseFirstPageCache = !params.cursorId && !params.includeHidden;
+  const firstPageCacheKey = canUseFirstPageCache
+    ? `${params.categorySlug}::${params.take}`
+    : null;
+  if (firstPageCacheKey) {
+    const cached = forumCategoryThreadsFirstPageCache.get(firstPageCacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+  }
+
   const cursor = decodeForumCursor<ThreadCursor>(params.cursorId);
   const rows = await prisma.forumThread.findMany({
     where: {
@@ -93,7 +201,81 @@ export async function getThreadsByCategory(params: {
         })
       : null;
 
-  return { items, nextCursor };
+  const result = { items, nextCursor };
+
+  if (firstPageCacheKey) {
+    forumCategoryThreadsFirstPageCache.set(firstPageCacheKey, {
+      value: result,
+      expiresAt: Date.now() + FORUM_CATEGORY_THREADS_FIRST_PAGE_CACHE_TTL_MS,
+    });
+  }
+
+  return result;
+}
+
+async function resolveForumCategoryIdBySlug(slug: string) {
+  const now = Date.now();
+  const cached = forumCategoryIdCache.get(slug);
+  if (cached && cached.expiresAt > now) {
+    return cached.id;
+  }
+
+  const category = await prisma.forumCategory.findUnique({
+    where: { slug },
+    select: { id: true },
+  });
+  if (!category) {
+    forumCategoryIdCache.delete(slug);
+    return null;
+  }
+
+  forumCategoryIdCache.set(slug, {
+    id: category.id,
+    expiresAt: now + FORUM_CATEGORY_ID_CACHE_TTL_MS,
+  });
+  return category.id;
+}
+
+function getForumThreadLookupCacheKey(categorySlug: string, slug: string) {
+  return `${categorySlug}::${slug}`;
+}
+
+export function invalidateForumThreadLookupCache(categorySlug: string, slug: string) {
+  forumThreadLookupCache.delete(getForumThreadLookupCacheKey(categorySlug, slug));
+}
+
+function getForumThreadFirstSliceCacheKey(categorySlug: string, slug: string, take: number) {
+  return `${categorySlug}::${slug}::${take}`;
+}
+
+export function invalidateForumThreadFirstSliceCache(categorySlug: string, slug: string) {
+  const prefix = `${categorySlug}::${slug}::`;
+  for (const key of forumThreadFirstSliceCache.keys()) {
+    if (key.startsWith(prefix)) {
+      forumThreadFirstSliceCache.delete(key);
+    }
+  }
+}
+
+export function invalidateForumThreadReadCaches(categorySlug: string, slug: string) {
+  invalidateForumThreadLookupCache(categorySlug, slug);
+  invalidateForumThreadFirstSliceCache(categorySlug, slug);
+}
+
+export function invalidateForumCategoryThreadsFirstPageCache(categorySlug: string) {
+  const prefix = `${categorySlug}::`;
+  for (const key of forumCategoryThreadsFirstPageCache.keys()) {
+    if (key.startsWith(prefix)) {
+      forumCategoryThreadsFirstPageCache.delete(key);
+    }
+  }
+}
+
+export function invalidateForumCategoryReadCaches(categorySlug: string, slug?: string) {
+  invalidateForumCategoryThreadsFirstPageCache(categorySlug);
+  if (slug) {
+    invalidateForumThreadReadCaches(categorySlug, slug);
+  }
 }
 
 export async function getThreadPostsByCategoryAndSlug(params: {
@@ -104,62 +286,66 @@ export async function getThreadPostsByCategoryAndSlug(params: {
   includeHidden?: boolean;
   viewerId?: string | null;
 }) {
+  const canUseFirstSliceCache =
+    !params.cursorId && !params.includeHidden && !params.viewerId;
+  const firstSliceCacheKey = canUseFirstSliceCache
+    ? getForumThreadFirstSliceCacheKey(params.categorySlug, params.slug, params.take)
+    : null;
+  if (firstSliceCacheKey) {
+    const cached = forumThreadFirstSliceCache.get(firstSliceCacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.value;
+    }
+  }
+
   const cursor = decodeForumCursor<PostCursor>(params.cursorId);
-  const thread = await prisma.forumThread.findFirst({
-    where: {
-      slug: params.slug,
-      category: { slug: params.categorySlug },
-      deletedAt: null,
-      ...(params.includeHidden ? {} : { hiddenAt: null }),
-    },
-    select: {
-      id: true,
-      slug: true,
-      title: true,
-      authorId: true,
-      locked: true,
-      hiddenAt: true,
-      hiddenById: true,
-      posts: {
-        where: cursor
-          ? {
-              OR: [
-                { createdAt: { gt: new Date(cursor.createdAt) } },
-                {
-                  AND: [
-                    { createdAt: { equals: new Date(cursor.createdAt) } },
-                    { id: { gt: cursor.id } },
-                  ],
-                },
-              ],
-            }
-          : undefined,
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: params.take + 1,
-        select: {
-          id: true,
-          createdAt: true,
-          updatedAt: true,
-          markdown: true,
-          hiddenAt: true,
-          hiddenById: true,
-          deletedAt: true,
-          deletedById: true,
-          authorId: true,
-          author: { select: userAuthorSelect },
-        },
-      },
-    },
+  const thread = await findThreadByCategoryAndSlug({
+    categorySlug: params.categorySlug,
+    slug: params.slug,
+    includeHidden: params.includeHidden,
   });
   if (!thread) return null;
 
-  const rows = thread.posts;
+  const rows = await prisma.forumPost.findMany({
+    where: {
+      threadId: thread.id,
+      ...(cursor
+        ? {
+            OR: [
+              { createdAt: { gt: new Date(cursor.createdAt) } },
+              {
+                AND: [
+                  { createdAt: { equals: new Date(cursor.createdAt) } },
+                  { id: { gt: cursor.id } },
+                ],
+              },
+            ],
+          }
+        : {}),
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: params.take + 1,
+    select: {
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+      markdown: true,
+      hiddenAt: true,
+      hiddenById: true,
+      deletedAt: true,
+      deletedById: true,
+      authorId: true,
+      author: { select: userAuthorSelect },
+      _count: { select: { likes: true } },
+    },
+  });
+
   const items = rows.slice(0, params.take).map((row) => ({
     id: row.id,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     markdown: row.deletedAt || row.hiddenAt ? "" : row.markdown ?? "",
-    likesCount: 0,
+    likesCount: row._count.likes,
     likedByMe: false,
     repCount: 0,
     repGivenByMe: false,
@@ -180,11 +366,20 @@ export async function getThreadPostsByCategoryAndSlug(params: {
         })
       : null;
 
-  return {
+  const result = {
     thread,
     items: await attachForumPostInteractions(items, params.viewerId),
     nextCursor,
   };
+
+  if (firstSliceCacheKey) {
+    forumThreadFirstSliceCache.set(firstSliceCacheKey, {
+      value: result,
+      expiresAt: Date.now() + FORUM_THREAD_FIRST_SLICE_CACHE_TTL_MS,
+    });
+  }
+
+  return result;
 }
 
 export async function getThreadPostsAfterByCategoryAndSlug(params: {
@@ -196,61 +391,46 @@ export async function getThreadPostsAfterByCategoryAndSlug(params: {
   includeHidden?: boolean;
   viewerId?: string | null;
 }) {
-  const thread = await prisma.forumThread.findFirst({
-    where: {
-      slug: params.slug,
-      category: { slug: params.categorySlug },
-      deletedAt: null,
-      ...(params.includeHidden ? {} : { hiddenAt: null }),
-    },
-    select: {
-      id: true,
-      authorId: true,
-      posts: {
-        where: {
-          OR: [
-            { createdAt: { gt: params.afterCreatedAt } },
-            ...(params.afterId
-              ? [{ createdAt: { equals: params.afterCreatedAt }, id: { gt: params.afterId } }]
-              : []),
-          ],
-        },
-        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        take: params.take,
-        select: {
-          id: true,
-          createdAt: true,
-          updatedAt: true,
-          markdown: true,
-          hiddenAt: true,
-          hiddenById: true,
-          deletedAt: true,
-          deletedById: true,
-          authorId: true,
-          author: {
-            select: {
-              id: true,
-              username: true,
-              profile: {
-                select: {
-                  displayName: true,
-                  avatarUrl: true,
-                },
-              },
-            },
-          },
-        },
-      },
-    },
+  const thread = await findThreadByCategoryAndSlug({
+    categorySlug: params.categorySlug,
+    slug: params.slug,
+    includeHidden: params.includeHidden,
   });
   if (!thread) return null;
 
-  const items = thread.posts.map((row) => ({
+  const rows = await prisma.forumPost.findMany({
+    where: {
+      threadId: thread.id,
+      OR: [
+        { createdAt: { gt: params.afterCreatedAt } },
+        ...(params.afterId
+          ? [{ createdAt: { equals: params.afterCreatedAt }, id: { gt: params.afterId } }]
+          : []),
+      ],
+    },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    take: params.take,
+    select: {
+      id: true,
+      createdAt: true,
+      updatedAt: true,
+      markdown: true,
+      hiddenAt: true,
+      hiddenById: true,
+      deletedAt: true,
+      deletedById: true,
+      authorId: true,
+      author: { select: userAuthorSelect },
+      _count: { select: { likes: true } },
+    },
+  });
+
+  const items = rows.map((row) => ({
     id: row.id,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     markdown: row.deletedAt || row.hiddenAt ? "" : row.markdown ?? "",
-    likesCount: 0,
+    likesCount: row._count.likes,
     likedByMe: false,
     repCount: 0,
     repGivenByMe: false,
@@ -270,6 +450,77 @@ export async function getThreadPostsAfterByCategoryAndSlug(params: {
     },
     items: await attachForumPostInteractions(items, params.viewerId),
   };
+}
+
+async function findThreadByCategoryAndSlug(params: {
+  categorySlug: string;
+  slug: string;
+  includeHidden?: boolean;
+}) {
+  const cacheKey = getForumThreadLookupCacheKey(params.categorySlug, params.slug);
+  const now = Date.now();
+  if (!params.includeHidden) {
+    const cached = forumThreadLookupCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
+    }
+  }
+
+  const categoryId = await resolveForumCategoryIdBySlug(params.categorySlug);
+  if (!categoryId) {
+    if (!params.includeHidden) {
+      forumThreadLookupCache.set(cacheKey, {
+        value: null,
+        expiresAt: now + FORUM_THREAD_LOOKUP_CACHE_TTL_MS,
+      });
+    }
+    return null;
+  }
+
+  const thread = await prisma.forumThread.findUnique({
+    where: {
+      categoryId_slug: {
+        categoryId,
+        slug: params.slug,
+      },
+    },
+    select: {
+      id: true,
+      slug: true,
+      title: true,
+      authorId: true,
+      locked: true,
+      deletedAt: true,
+      hiddenAt: true,
+      hiddenById: true,
+    },
+  });
+
+  if (!thread || thread.deletedAt) {
+    if (!params.includeHidden) {
+      forumThreadLookupCache.set(cacheKey, {
+        value: null,
+        expiresAt: now + FORUM_THREAD_LOOKUP_CACHE_TTL_MS,
+      });
+    }
+    return null;
+  }
+  if (!params.includeHidden && thread.hiddenAt) {
+    forumThreadLookupCache.set(cacheKey, {
+      value: null,
+      expiresAt: now + FORUM_THREAD_LOOKUP_CACHE_TTL_MS,
+    });
+    return null;
+  }
+
+  if (!params.includeHidden) {
+    forumThreadLookupCache.set(cacheKey, {
+      value: thread,
+      expiresAt: now + FORUM_THREAD_LOOKUP_CACHE_TTL_MS,
+    });
+  }
+
+  return thread;
 }
 
 type ForumThreadPostDTO = {
@@ -303,12 +554,7 @@ async function attachForumPostInteractions(
     return items;
   }
 
-  const [likesGrouped, repsGrouped, likedRows, repRows, reportRows] = await Promise.all([
-    prisma.forumPostLike.groupBy({
-      by: ["postId"],
-      where: { postId: { in: postIds } },
-      _count: { _all: true },
-    }),
+  const [repsGrouped, likedRows, repRows, reportRows] = await Promise.all([
     prisma.forumPostReputationGrant.groupBy({
       by: ["postId"],
       where: { postId: { in: postIds } },
@@ -334,9 +580,6 @@ async function attachForumPostInteractions(
       : Promise.resolve([] as { postId: string }[]),
   ]);
 
-  const likesCountMap = new Map<string, number>();
-  likesGrouped.forEach((group) => likesCountMap.set(group.postId, group._count._all));
-
   const repCountMap = new Map<string, number>();
   repsGrouped.forEach((group) => repCountMap.set(group.postId, group._sum.amount ?? 0));
 
@@ -346,7 +589,6 @@ async function attachForumPostInteractions(
 
   return items.map((item) => ({
     ...item,
-    likesCount: likesCountMap.get(item.id) ?? 0,
     likedByMe: viewerId ? likedSet.has(item.id) : false,
     repCount: repCountMap.get(item.id) ?? 0,
     repGivenByMe: viewerId ? repGivenSet.has(item.id) : false,
