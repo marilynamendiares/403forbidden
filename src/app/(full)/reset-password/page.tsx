@@ -1,9 +1,17 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { requestPasswordReset, resetPasswordWithCode } from "@/lib/authFlowClient";
+import AuthPanelShell, {
+  AUTH_BUTTON_CLASS,
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_LINK_ROW_CLASS,
+} from "@/app/(full)/AuthPanelShell";
 
 export default function ResetPasswordPage() {
   return (
@@ -106,65 +114,89 @@ function ResetPasswordPageInner() {
   }
 
   return (
-    <div className="mx-auto max-w-sm py-16">
-      <h1 className="text-2xl font-semibold mb-2">Set a new password</h1>
-      <p className="text-sm opacity-70 mb-6">
-        {email ? (
-          <>
-            Reset for <span className="font-medium">{email}</span>
-          </>
-        ) : (
-          "Email is missing."
-        )}
-      </p>
+    <AuthPanelShell title="Passphrase Reset Protocol">
+      {email ? (
+        <p className="text-center text-xs text-white/50">
+          reset for <span className="text-white/72">{email}</span>
+        </p>
+      ) : (
+        <p className="text-center text-xs text-white/40">email context missing</p>
+      )}
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <input
-          className="w-full border rounded px-3 py-2"
-          placeholder="Reset code"
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          disabled={status !== "idle"}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-        />
+      <form onSubmit={onSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="reset-code" className={AUTH_LABEL_CLASS}>
+            Recovery Code
+          </label>
+          <input
+            id="reset-code"
+            className={AUTH_INPUT_CLASS}
+            placeholder="000000"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            disabled={status !== "idle"}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+          />
+        </div>
 
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="New password"
-          value={newPassword}
-          onChange={(e) => setNewPassword(e.target.value)}
-          disabled={status !== "idle"}
-        />
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="Repeat new password"
-          value={newPassword2}
-          onChange={(e) => setNewPassword2(e.target.value)}
-          disabled={status !== "idle"}
-        />
+        <div className="space-y-2">
+          <label htmlFor="reset-passphrase" className={AUTH_LABEL_CLASS}>
+            New Passphrase
+          </label>
+          <input
+            id="reset-passphrase"
+            className={AUTH_INPUT_CLASS}
+            type="password"
+            placeholder="••••••••"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            disabled={status !== "idle"}
+            autoComplete="new-password"
+          />
+        </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        {info && <p className="text-sm opacity-70">{info}</p>}
+        <div className="space-y-2">
+          <label htmlFor="reset-passphrase-repeat" className={AUTH_LABEL_CLASS}>
+            Confirm Passphrase
+          </label>
+          <input
+            id="reset-passphrase-repeat"
+            className={AUTH_INPUT_CLASS}
+            type="password"
+            placeholder="••••••••"
+            value={newPassword2}
+            onChange={(e) => setNewPassword2(e.target.value)}
+            disabled={status !== "idle"}
+            autoComplete="new-password"
+          />
+        </div>
 
-        <button
-          className="w-full rounded bg-black text-white py-2 disabled:opacity-50"
-          disabled={status !== "idle"}
-        >
-          {status === "saving" ? "Saving..." : "Update password"}
+        {error && <p className="text-sm text-red-300">{error}</p>}
+        {info && <p className="text-sm text-white/60">{info}</p>}
+
+        <button className={AUTH_BUTTON_CLASS} disabled={status !== "idle"}>
+          {status === "saving" ? "updating..." : "update passphrase"}
         </button>
 
         <button
           type="button"
           onClick={onResend}
-          className="w-full border rounded px-3 py-2 disabled:opacity-50"
+          className={AUTH_BUTTON_CLASS}
           disabled={status !== "idle"}
         >
-          Resend code
+          {status === "resending" ? "resending..." : "resend code"}
         </button>
+
+        <div className={AUTH_LINK_ROW_CLASS}>
+          <Link className={AUTH_LINK_CLASS} href="/login">
+            return to login
+          </Link>
+          <Link className={AUTH_LINK_CLASS} href="/forgot-password">
+            restart recovery
+          </Link>
+        </div>
       </form>
-    </div>
+    </AuthPanelShell>
   );
 }

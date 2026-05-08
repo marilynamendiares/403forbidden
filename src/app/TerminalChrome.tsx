@@ -5,7 +5,7 @@ export default function TerminalChrome() {
   return (
     <>
       <GlobalBackground />
-      <GlobalBrand />
+      <GlobalBrand hideGif />
     </>
   );
 }

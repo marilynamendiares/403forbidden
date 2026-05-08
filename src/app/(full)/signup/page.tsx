@@ -1,7 +1,15 @@
 "use client";
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signupWithEmail } from "@/lib/authFlowClient";
+import AuthPanelShell, {
+  AUTH_BUTTON_CLASS,
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_LINK_ROW_CLASS,
+} from "@/app/(full)/AuthPanelShell";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
@@ -29,17 +37,71 @@ export default function SignupPage() {
   }
 
   return (
-    <div className="mx-auto max-w-sm py-16">
-      <h1 className="text-2xl font-semibold mb-6">Create account</h1>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input className="w-full border rounded px-3 py-2" placeholder="Username" value={username} onChange={(e)=>setUsername(e.target.value)} />
-        <input className="w-full border rounded px-3 py-2" type="email" placeholder="Email" value={email} onChange={(e)=>setEmail(e.target.value)} />
-        <input className="w-full border rounded px-3 py-2" type="password" placeholder="Password" value={password} onChange={(e)=>setPassword(e.target.value)} />
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        <button className="w-full rounded bg-black text-white py-2 disabled:opacity-50" disabled={loading}>
-          {loading ? "Creating..." : "Sign up"}
+    <AuthPanelShell title="Mesh Access Request">
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="signup-identifier" className={AUTH_LABEL_CLASS}>
+            Identifier
+          </label>
+          <input
+            id="signup-identifier"
+            className={AUTH_INPUT_CLASS}
+            placeholder="callsign"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={loading}
+            autoComplete="username"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="signup-address" className={AUTH_LABEL_CLASS}>
+            Contact Address
+          </label>
+          <input
+            id="signup-address"
+            className={AUTH_INPUT_CLASS}
+            type="email"
+            inputMode="email"
+            placeholder="operator@mesh.net"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={loading}
+            autoComplete="email"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label htmlFor="signup-passphrase" className={AUTH_LABEL_CLASS}>
+            Passphrase
+          </label>
+          <input
+            id="signup-passphrase"
+            className={AUTH_INPUT_CLASS}
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={loading}
+            autoComplete="new-password"
+          />
+        </div>
+
+        {error && <p className="text-sm text-red-300">{error}</p>}
+
+        <button className={AUTH_BUTTON_CLASS} disabled={loading}>
+          {loading ? "requesting..." : "request invite"}
         </button>
+
+        <div className={AUTH_LINK_ROW_CLASS}>
+          <Link className={AUTH_LINK_CLASS} href="/login">
+            return to login
+          </Link>
+          <Link className={AUTH_LINK_CLASS} href="/forgot-password">
+            recover access
+          </Link>
+        </div>
       </form>
-    </div>
+    </AuthPanelShell>
   );
 }

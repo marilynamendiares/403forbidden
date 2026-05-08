@@ -140,6 +140,46 @@ html, body {
   animation: blink 2s steps(1, end) infinite;
 }
 
+@keyframes loginPanelEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes loginMarkEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.72);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.login-auth-panel-enter {
+  animation: loginPanelEnter 780ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: opacity, transform;
+}
+
+.login-auth-mark-enter {
+  animation: loginMarkEnter 860ms cubic-bezier(0.16, 0.84, 0.24, 1) both;
+  will-change: opacity, transform;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-auth-panel-enter,
+  .login-auth-mark-enter {
+    animation: none;
+  }
+}
+
 .scrollbar-hidden {
   -ms-overflow-style: none;
   scrollbar-width: none;

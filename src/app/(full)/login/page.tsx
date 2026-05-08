@@ -4,6 +4,13 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import AuthPanelShell, {
+  AUTH_BUTTON_CLASS,
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_LINK_ROW_CLASS,
+} from "@/app/(full)/AuthPanelShell";
 
 function normalizeNext(sp: URLSearchParams) {
   const raw = sp.get("next") || "/";
@@ -54,47 +61,59 @@ function LoginPageInner() {
   }
 
   return (
-    <div className="mx-auto max-w-sm py-16">
-      <h1 className="text-2xl font-semibold mb-6">Sign in</h1>
-
+    <AuthPanelShell title="Mesh Authentication Protocol">
       {/* C) success banner after verification */}
       {verified && (
-        <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
           Email confirmed. You can sign in now.
         </div>
       )}
 
-            {resetDone && (
-        <div className="mb-4 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
+      {resetDone && (
+        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200">
           Password updated. You can sign in now.
         </div>
       )}
 
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="login-identifier" className={AUTH_LABEL_CLASS}>
+            Identifier
+          </label>
+          <input
+            id="login-identifier"
+            className={AUTH_INPUT_CLASS}
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="callsign"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+        </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <div className="space-y-2">
+          <label htmlFor="login-passphrase" className={AUTH_LABEL_CLASS}>
+            Passphrase
+          </label>
+          <input
+            id="login-passphrase"
+            className={AUTH_INPUT_CLASS}
+            type="password"
+            autoComplete="current-password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+        </div>
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
+        {error && <p className="text-sm text-red-300">{error}</p>}
 
-        {/* D) helpful hint to verify email */}
         {error && email && (
-          <p className="text-xs opacity-70">
+          <p className="text-xs text-white/55">
             If you just signed up, you may need to{" "}
             <Link
-              className="underline hover:opacity-100"
+              className="underline hover:text-white"
               href={`/verify-email?email=${encodeURIComponent(email)}`}
             >
               verify your email
@@ -103,16 +122,17 @@ function LoginPageInner() {
           </p>
         )}
 
-        <button className="w-full rounded bg-black text-white py-2">
-          Sign in
-        </button>
+        <button className={AUTH_BUTTON_CLASS}>authenticate</button>
 
-        <p className="text-xs opacity-70 text-center">
-          <Link className="underline hover:opacity-100" href="/forgot-password">
-            Forgot password?
+        <div className={AUTH_LINK_ROW_CLASS}>
+          <Link className={AUTH_LINK_CLASS} href="/forgot-password">
+            recover access
           </Link>
-        </p>
+          <Link className={AUTH_LINK_CLASS} href="/signup">
+            request invite
+          </Link>
+        </div>
       </form>
-    </div>
+    </AuthPanelShell>
   );
 }

@@ -6,7 +6,11 @@ import Link from "next/link";
 import BrandMark from "@/app/BrandMark";
 import { useShellUI } from "@/app/shell/ShellUIContext";
 
-export default function GlobalBrand() {
+export default function GlobalBrand({
+  hideGif = false,
+}: {
+  hideGif?: boolean;
+}) {
   const { sidebarOpen, shellActive, setBrandHover } = useShellUI();
   const buildId = process.env.NEXT_PUBLIC_BUILD_ID ?? "dev";
   const terminalLines = useMemo(
@@ -78,7 +82,7 @@ export default function GlobalBrand() {
         }}
       >
         <div
-          className="px-3 pointer-events-auto"
+          className="px-5 pointer-events-auto"
           onMouseEnter={() => setBrandHover(true)}
           onMouseLeave={() => setBrandHover(false)}
           onFocus={() => setBrandHover(true)}
@@ -88,19 +92,24 @@ export default function GlobalBrand() {
           href="/"
           className={[
             "header-font-archimoto",
-            "relative inline-flex h-[72px] items-center pl-[68px]",
+            "relative inline-flex h-[72px] items-center",
+            hideGif ? "pl-0" : "pl-[68px]",
             "uppercase",
             "text-[15px] leading-none",
             "text-foreground hover:text-white transition",
             "select-none",
           ].join(" ")}
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/globalbrand.gif"
-            alt="403 Forbidden logo"
-            className="pointer-events-none absolute left-0 top-1/2 h-14 w-14 -translate-y-1/2 scale-150 object-contain"
-          />
+          {!hideGif && (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/globalbrand.gif"
+                alt="403 Forbidden logo"
+                className="pointer-events-none absolute left-0 top-1/2 h-14 w-14 -translate-y-1/2 scale-150 object-contain"
+              />
+            </>
+          )}
           <BrandMark
             text="403 Forbidden"
             tail="_"
@@ -108,9 +117,12 @@ export default function GlobalBrand() {
           />
         </Link>
 
-        <div className="pointer-events-none absolute left-0 top-[108px] px-3">
+        <div className="pointer-events-none absolute left-0 top-[108px] px-5">
           <div
-            className="pl-[68px] flex max-w-[420px] flex-col gap-1 overflow-hidden font-mono text-[9px] leading-none text-[#7E7E7E]"
+            className={[
+              "flex max-w-[420px] flex-col gap-1 overflow-hidden font-mono text-[9px] leading-none text-[#7E7E7E]",
+              hideGif ? "pl-0" : "pl-[68px]",
+            ].join(" ")}
             style={{ textTransform: "none" }}
           >
             {terminalLines.slice(0, visibleCount).map((line, index) =>

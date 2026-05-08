@@ -5,6 +5,13 @@ import { useMemo, useState } from "react";
 import { Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { resendEmailCode, verifyEmailCode } from "@/lib/authFlowClient";
+import AuthPanelShell, {
+  AUTH_BUTTON_CLASS,
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_LINK_ROW_CLASS,
+} from "@/app/(full)/AuthPanelShell";
 
 export default function VerifyEmailPage() {
   return (
@@ -91,23 +98,28 @@ function VerifyEmailPageInner() {
   }
 
   return (
-    <main className="mx-auto max-w-md px-4 py-10">
-      <h1 className="text-xl font-semibold">Verify your email</h1>
-      <p className="mt-2 text-sm opacity-70">
-        We sent a confirmation code to{" "}
-        <span className="font-medium opacity-90">{email || "your email"}</span>
+    <AuthPanelShell title="Mesh Identity Verification">
+      <p className="text-center text-xs text-white/50">
+        awaiting confirmation for{" "}
+        <span className="text-white/72">{email || "unknown address"}</span>
       </p>
 
-      <form onSubmit={onVerify} className="mt-6 space-y-3">
-        <input
-          value={code}
-          onChange={(e) => setCode(e.target.value)}
-          inputMode="numeric"
-          autoComplete="one-time-code"
-          placeholder="Enter code"
-          className="w-full rounded-md border border-neutral-700 bg-transparent px-3 py-2 text-base"
-          disabled={status !== "idle"}
-        />
+      <form onSubmit={onVerify} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="verify-code" className={AUTH_LABEL_CLASS}>
+            Verification Code
+          </label>
+          <input
+            id="verify-code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="000000"
+            className={AUTH_INPUT_CLASS}
+            disabled={status !== "idle"}
+          />
+        </div>
 
         {error && (
           <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">
@@ -120,30 +132,28 @@ function VerifyEmailPageInner() {
           </div>
         )}
 
-        <button
-          type="submit"
-          disabled={status !== "idle"}
-          className="w-full rounded-md border border-neutral-700 px-4 py-2 text-sm hover:bg-neutral-900 disabled:opacity-40"
-        >
-          {status === "verifying" ? "Verifying…" : "Verify"}
+        <button type="submit" disabled={status !== "idle"} className={AUTH_BUTTON_CLASS}>
+          {status === "verifying" ? "verifying..." : "verify identity"}
         </button>
 
         <button
           type="button"
           onClick={onResend}
           disabled={status !== "idle"}
-          className="w-full rounded-md border border-neutral-700/70 px-4 py-2 text-sm hover:bg-neutral-900/60 disabled:opacity-40"
+          className={AUTH_BUTTON_CLASS}
         >
-          {status === "resending" ? "Resending…" : "Resend code"}
+          {status === "resending" ? "resending..." : "resend code"}
         </button>
 
-        <div className="pt-2 text-center text-sm opacity-70">
-          Wrong email?{" "}
-          <Link className="underline hover:opacity-100" href="/signup">
-            Go back
+        <div className={AUTH_LINK_ROW_CLASS}>
+          <Link className={AUTH_LINK_CLASS} href="/login">
+            return to login
+          </Link>
+          <Link className={AUTH_LINK_CLASS} href="/signup">
+            wrong address
           </Link>
         </div>
       </form>
-    </main>
+    </AuthPanelShell>
   );
 }

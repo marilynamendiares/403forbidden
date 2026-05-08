@@ -1,8 +1,16 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { requestPasswordReset } from "@/lib/authFlowClient";
+import AuthPanelShell, {
+  AUTH_BUTTON_CLASS,
+  AUTH_INPUT_CLASS,
+  AUTH_LABEL_CLASS,
+  AUTH_LINK_CLASS,
+  AUTH_LINK_ROW_CLASS,
+} from "@/app/(full)/AuthPanelShell";
 
 export default function ForgotPasswordPage() {
   const router = useRouter();
@@ -42,32 +50,41 @@ export default function ForgotPasswordPage() {
   }
 
   return (
-    <div className="mx-auto max-w-sm py-16">
-      <h1 className="text-2xl font-semibold mb-2">Reset password</h1>
-      <p className="text-sm opacity-70 mb-6">
-        Enter your email — we’ll send a reset code.
-      </p>
+    <AuthPanelShell title="Access Recovery Protocol">
+      <form onSubmit={onSubmit} className="space-y-6">
+        <div className="space-y-2">
+          <label htmlFor="forgot-address" className={AUTH_LABEL_CLASS}>
+            Contact Address
+          </label>
+          <input
+            id="forgot-address"
+            className={AUTH_INPUT_CLASS}
+            type="email"
+            inputMode="email"
+            placeholder="operator@mesh.net"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={status !== "idle"}
+            autoComplete="email"
+          />
+        </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
-        <input
-          className="w-full border rounded px-3 py-2"
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={status !== "idle"}
-        />
+        {error && <p className="text-sm text-red-300">{error}</p>}
+        {info && <p className="text-sm text-white/60">{info}</p>}
 
-        {error && <p className="text-red-600 text-sm">{error}</p>}
-        {info && <p className="text-sm opacity-70">{info}</p>}
-
-        <button
-          className="w-full rounded bg-black text-white py-2 disabled:opacity-50"
-          disabled={status !== "idle"}
-        >
-          {status === "sending" ? "Sending..." : "Send code"}
+        <button className={AUTH_BUTTON_CLASS} disabled={status !== "idle"}>
+          {status === "sending" ? "sending..." : "send recovery code"}
         </button>
+
+        <div className={AUTH_LINK_ROW_CLASS}>
+          <Link className={AUTH_LINK_CLASS} href="/login">
+            return to login
+          </Link>
+          <Link className={AUTH_LINK_CLASS} href="/signup">
+            request invite
+          </Link>
+        </div>
       </form>
-    </div>
+    </AuthPanelShell>
   );
 }
